@@ -14,7 +14,7 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-const float flowConstant = 0.17;
+const float flowConstant = 0.0041;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -152,22 +152,37 @@ void execute_actions(const String& actions) {
     int durations[10] = {0};
     double desiredFlow = 0;
 
-    int water_temp = 0;
     Serial.println("start");
 
     StaticJsonDocument<200> doc;
-    deserializeJson(doc, actions);
+    DeserializationError error = deserializeJson(doc, actions);
+
+    // Check for deserialization error
+    if (error) {
+        Serial.println("Failed to parse JSON!");
+        return;
+    }
+
+    // Check for 'cold' and 'warm' in the JSON and set desiredFlow
+    if (doc.containsKey("cold")) {
+        desiredFlow = doc["cold"].as<double>();
+        pump_water(1, 0);
+    } else if (doc.containsKey("warm")) {
+        desiredFlow = doc["warm"].as<double>();
+        pump_water(1, 1);
+    }
 
     unsigned long slotStartTimes[10] = {0};
     bool isWaterPumpStarted = false;
     double accumulatedFlow = 0;
 
     for (int i = 0; i < 10; i++) {
-        if (durations[i] > 0) {
+        String slotKey = "slot" + String(i + 1);
+        if (doc.containsKey(slotKey)) {
+            durations[i] = doc[slotKey];
             digitalWrite(slotPins[i], HIGH);
             slotStartTimes[i] = millis();
             if (!isWaterPumpStarted) {
-                pump_water(1, water_temp);
                 isWaterPumpStarted = true;
             }
             delay(500);
@@ -188,7 +203,7 @@ void execute_actions(const String& actions) {
 
         accumulatedFlow = flowPulse * flowConstant;
         if (accumulatedFlow >= desiredFlow) {
-            pump_water(0, water_temp);
+            pump_water(0, 0);
         }
 
         isSlotsRunning = false;
