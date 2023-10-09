@@ -67,6 +67,7 @@ void loop() {
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
                 digitalWrite(slotPins[i], LOW);
             }
+            printTotalWaterUsage(); // 印出總水量當泵停止
         } else {
             boolean slotStarted = false;
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
@@ -87,11 +88,6 @@ void loop() {
     if (millis() - lastTemperaturePrintTime >= 5000) {
         lastTemperaturePrintTime = millis();
         checkTemperature();
-    }
-
-    if (isMeasuring) {
-        Serial.print("Flow: ");
-        Serial.println(flowPulse * flowConstant, 2); // Print the flow every loop cycle when measuring
     }
 }
 
@@ -168,10 +164,8 @@ void pump_water(int state, int water_temp) {
         currentUsage = flowPulse * flowConstant;
         if (water_temp == 1) {
             warmWaterUsage += currentUsage;
-            printWaterUsage("Warm");
         } else {
             coldWaterUsage += currentUsage;
-            printWaterUsage("Cold");
         }
         measuringMode = false;
         isMeasuring = false;
