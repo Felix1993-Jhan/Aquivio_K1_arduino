@@ -133,23 +133,13 @@ void pump_water(int state, int water_temp) {
         measuringMode = true;
     } else {
         measuringMode = false; // 首先關閉量測模式
-
         currentUsage = flowPulse * flowConstant;
-        
-        if (water_temp == 1) {
-            warmWaterUsage += currentUsage;
-            Serial.print("Warm Water Usage: ");
-            Serial.print(warmWaterUsage);
-        } else {
-            coldWaterUsage += currentUsage;
-            Serial.print("Cold Water Usage: ");
-            Serial.print(coldWaterUsage);
-        }
+        Serial.print(currentUsage);
 
         digitalWrite(waterpump, LOW);
         digitalWrite(warmvalve, LOW);
         digitalWrite(coldvalve, LOW);
-        
+
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
     }
 }
