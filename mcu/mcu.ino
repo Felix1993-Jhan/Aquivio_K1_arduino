@@ -14,7 +14,7 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-const float flowConstant = 0.0041;
+const float flowConstant = 0.000041;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -149,8 +149,9 @@ void pump_water(int state, int water_temp) {
 
 
 void execute_actions(const String& actions) {
-    int durations[10] = {0};
+    double durations[10] = {0};
     double desiredFlow = 0;
+    int water_temp = 0;
 
     Serial.println("start");
 
@@ -163,15 +164,23 @@ void execute_actions(const String& actions) {
         return;
     }
 
-    // Check for 'cold' and 'warm' in the JSON and set desiredFlow
-    if (doc.containsKey("cold")) {
-        desiredFlow = doc["cold"].as<double>();
-        pump_water(1, 0);
-    } else if (doc.containsKey("warm")) {
-        desiredFlow = doc["warm"].as<double>();
-        pump_water(1, 1);
-    }
+    for (JsonPair pair : doc.as<JsonObject>()) {
+        String key = pair.key().c_str();
+        int duration = pair.value().as<double>();
 
+        if (key == "cold") {
+          desiredFlow = duration;
+          water_temp = 0;
+        } else if (key == "warm") {
+          desiredFlow = duration;
+          water_temp = 1;
+        } else if (key.startsWith("slot")) {
+          int slot_number = key.substring(4).toInt() - 1;
+          if (slot_number >= 0 && slot_number < 10) {
+            durations[slot_number] = duration;
+          }
+        }
+      }
     unsigned long slotStartTimes[10] = {0};
     bool isWaterPumpStarted = false;
     double accumulatedFlow = 0;
