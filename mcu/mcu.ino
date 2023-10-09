@@ -144,7 +144,7 @@ void pump_water(int state, int water_temp) {
     digitalWrite(watervalve, state == 1 ? HIGH : LOW);
 
     if (state == 1) {
-        flowPulse = 0;
+        // 在開始泵動作之前，不要重置flowPulse
         digitalWrite(waterpump, HIGH);
         
         if(water_temp == 1) {
@@ -167,10 +167,14 @@ void pump_water(int state, int water_temp) {
         } else {
             coldWaterUsage += currentUsage;
         }
+        
+        // 在總水使用量已經被計算和保存後，再重置flowPulse
+        flowPulse = 0;
         measuringMode = false;
         isMeasuring = false;
     }
 }
+
 
 void execute_actions(const String& actions) {
     int durations[10] = {0};
