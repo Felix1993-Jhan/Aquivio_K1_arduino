@@ -95,14 +95,15 @@ void checkTemperature() {
     temperatureSensor.requestTemperatures();
     float tempC = temperatureSensor.getTempCByIndex(0);
     if (tempC != DEVICE_DISCONNECTED_C) {
-        Serial.print("Current Temperature: ");
-        Serial.print(tempC);
+        // Serial.print("Current Temperature: ");
+        // Serial.print(tempC);
     } else {
         Serial.println("Temperature Sensor Disconnected...");
     }
 }
 
 ISR (PCINT2_vect) {
+  Serial.println("Pulse detected!");
     if (measuringMode) {
         flowPulse++;
     }
