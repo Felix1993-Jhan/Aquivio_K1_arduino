@@ -366,6 +366,14 @@ void setup() {
     PCMSK2 |= 0b00000001;
 }
 
+void pulseGenerated() {
+  sei();
+  if (measuringMode) {
+    flowPulse++;
+  }
+  cli();
+}
+
 void loop() {
     if (stringComplete) {
         inputString.trim();
@@ -410,6 +418,11 @@ ISR (PCINT2_vect) {
     if (measuringMode) {
         flowPulse++;
     }
+}
+
+accumulatedFlow = flowPulse * flowConstant;  // flowConstant根據你的流量計進行調整
+if (accumulatedFlow >= desiredFlow) {
+  pump_water(0, water_temp);  // 停止泵
 }
 
 void pump_water(int state, int water_temp) {
