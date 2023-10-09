@@ -27,14 +27,6 @@ OneWire onewire(A1);
 DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 
-void checkTemperature();
-void pulseGenerated();
-void printTotalWaterUsage();
-void printWaterUsage(String waterTemp);
-void serialEvent();
-void pump_water(int state, int water_temp);
-void execute_actions(const String& actions);
-
 void setup() {
     Serial.begin(9600);
     inputString.reserve(200);
@@ -56,16 +48,8 @@ void setup() {
     digitalWrite(waterpump, LOW);
 
     pinMode(flowmeterPin, INPUT_PULLUP);
-    PCICR |= 0b00100000;
-    PCMSK2 |= 0b00000001;
-}
-
-void pulseGenerated() {
-  sei();
-  if (measuringMode) {
-    flowPulse++;
-  }
-  cli();
+    PCICR |= (1 << PCIE2);   // Enable pin change interrupt for A8 to A15
+    PCMSK2 |= (1 << PCINT16);  // Enable pin change interrupt for A8 specifically
 }
 
 void loop() {
@@ -104,9 +88,28 @@ void loop() {
         lastTemperaturePrintTime = millis();
         checkTemperature();
     }
+
+    if (isMeasuring) {
+        Serial.print("Flow: ");
+        Serial.println(flowPulse * flowConstant, 2); // Print the flow every loop cycle when measuring
+    }
 }
 
-// Your other functions like checkTemperature(), pulseGenerated() etc remain unchanged...
+void checkTemperature() {
+    temperatureSensor.requestTemperatures();
+    float tempC = temperatureSensor.getTempCByIndex(0);
+    if (tempC != DEVICE_DISCONNECTED_C) {
+        Serial.print("Current Temperature: ");
+        Serial.print(tempC);
+        Serial.print(char(176));
+        Serial.print("C  |  ");
+        Serial.print((tempC * 9.0) / 5.0 + 32.0);
+        Serial.print(char(176));
+        Serial.println("F");
+    } else {
+        Serial.println("Temperature Sensor Disconnected...");
+    }
+}
 
 ISR (PCINT2_vect) {
     if (measuringMode) {
@@ -114,9 +117,31 @@ ISR (PCINT2_vect) {
     }
 }
 
-accumulatedFlow = flowPulse * flowConstant;  // flowConstant根據你的流量計進行調整
-if (accumulatedFlow >= desiredFlow) {
-  pump_water(0, water_temp);  // 停止泵
+void printTotalWaterUsage() {
+    Serial.print("Total Water Usage: ");
+    Serial.print(warmWaterUsage + coldWaterUsage);
+    Serial.println("ml");
+    Serial.print("Warm Water Usage: ");
+    Serial.print(warmWaterUsage);
+    Serial.println("ml");
+    Serial.print("Cold Water Usage: ");
+    Serial.print(coldWaterUsage);
+    Serial.println("ml");
+}
+
+void printWaterUsage(String waterTemp) {
+    Serial.print(waterTemp + " Water Usage: ");
+    Serial.println(currentUsage);
+}
+
+void serialEvent() {
+    while (Serial.available()) {
+        char inChar = (char)Serial.read();
+        inputString += inChar;
+        if (inChar == '\n') {
+            stringComplete = true;
+        }
+    }
 }
 
 void pump_water(int state, int water_temp) {
@@ -209,4 +234,3 @@ void execute_actions(const String& actions) {
 
     Serial.println("end");
 }
-``
