@@ -66,9 +66,9 @@ void setup() {
   // attachInterrupt(digitalPinToInterrupt(flowmeterPin), pulseGenerated, RISING); // Uncomment this when using external interrupt pin
   // The following two lines of code calibrate the interrupt control register and pin change mask register
   // Pin Position @ Port 2 Pin 1
-  PCICR |= 0b00000100; // Comment this out when using external interrupt pin 
+  PCICR |= 0b00100000; // Comment this out when using external interrupt pin 
   PCMSK2 |= 0b00000001; // Comment this out when using external interrupt pin
-  PCIFR |= 0b00000100;
+  // PCIFR |= 0b00000100;
 }
 
 void loop() {
