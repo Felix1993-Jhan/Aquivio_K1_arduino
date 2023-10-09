@@ -134,6 +134,8 @@ void pump_water(int state, int water_temp) {
     } else {
         measuringMode = false; // 首先關閉量測模式
         currentUsage = flowPulse * flowConstant;
+        Serial.print(flowPulse);
+        Serial.print(flowConstant);
         Serial.print(currentUsage);
 
         digitalWrite(waterpump, LOW);
