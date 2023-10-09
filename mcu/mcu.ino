@@ -97,11 +97,6 @@ void checkTemperature() {
     if (tempC != DEVICE_DISCONNECTED_C) {
         Serial.print("Current Temperature: ");
         Serial.print(tempC);
-        Serial.print(char(176));
-        Serial.print("C  |  ");
-        Serial.print((tempC * 9.0) / 5.0 + 32.0);
-        Serial.print(char(176));
-        Serial.println("F");
     } else {
         Serial.println("Temperature Sensor Disconnected...");
     }
@@ -144,7 +139,6 @@ void pump_water(int state, int water_temp) {
     digitalWrite(watervalve, state == 1 ? HIGH : LOW);
 
     if (state == 1) {
-        // 在開始泵動作之前，不要重置flowPulse
         digitalWrite(waterpump, HIGH);
         
         if(water_temp == 1) {
@@ -155,25 +149,35 @@ void pump_water(int state, int water_temp) {
             digitalWrite(coldvalve, HIGH);
         }
         measuringMode = true;
-        isMeasuring = true;
     } else {
-        digitalWrite(waterpump, LOW);
-        digitalWrite(warmvalve, LOW);
-        digitalWrite(coldvalve, LOW);
-        
+        measuringMode = false; // 首先關閉量測模式
+
         currentUsage = flowPulse * flowConstant;
+        flowPulse = 0;  // Reset the flow pulse count for the next measurement
+        
         if (water_temp == 1) {
             warmWaterUsage += currentUsage;
         } else {
             coldWaterUsage += currentUsage;
         }
-        
-        // 在總水使用量已經被計算和保存後，再重置flowPulse
-        flowPulse = 0;
-        measuringMode = false;
-        isMeasuring = false;
+
+        // 打印使用量
+        Serial.print("Total Water Usage: ");
+        Serial.print(warmWaterUsage + coldWaterUsage);
+        Serial.println("ml");
+        Serial.print("Warm Water Usage: ");
+        Serial.print(warmWaterUsage);
+        Serial.println("ml");
+        Serial.print("Cold Water Usage: ");
+        Serial.print(coldWaterUsage);
+        Serial.println("ml");
+
+        digitalWrite(waterpump, LOW);
+        digitalWrite(warmvalve, LOW);
+        digitalWrite(coldvalve, LOW);
     }
 }
+
 
 
 void execute_actions(const String& actions) {
