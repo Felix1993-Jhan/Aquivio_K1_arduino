@@ -64,10 +64,26 @@ void loop() {
             pump_water(1, 1);
         } else if (inputString == "stop") {
             pump_water(0, 0);
+
+            measuringMode = false; // 首先關閉量測模式
+
+            currentUsage = flowPulse * flowConstant;
+            
+            if (water_temp == 1) {
+                warmWaterUsage += currentUsage;
+                Serial.print("Warm Water Usage: ");
+                Serial.print(warmWaterUsage);
+            } else {
+                coldWaterUsage += currentUsage;
+                Serial.print("Cold Water Usage: ");
+                Serial.print(coldWaterUsage);
+            }
+
+            flowPulse = 0;  // Reset the flow pulse count for the next measurement
+
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
                 digitalWrite(slotPins[i], LOW);
             }
-            printTotalWaterUsage(); // 印出總水量當泵停止
         } else {
             boolean slotStarted = false;
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
@@ -103,27 +119,9 @@ void checkTemperature() {
 }
 
 ISR (PCINT2_vect) {
-  Serial.println("Pulse detected!");
     if (measuringMode) {
         flowPulse++;
     }
-}
-
-void printTotalWaterUsage() {
-    Serial.print("Total Water Usage: ");
-    Serial.print(warmWaterUsage + coldWaterUsage);
-    Serial.println("ml");
-    Serial.print("Warm Water Usage: ");
-    Serial.print(warmWaterUsage);
-    Serial.println("ml");
-    Serial.print("Cold Water Usage: ");
-    Serial.print(coldWaterUsage);
-    Serial.println("ml");
-}
-
-void printWaterUsage(String waterTemp) {
-    Serial.print(waterTemp + " Water Usage: ");
-    Serial.println(currentUsage);
 }
 
 void serialEvent() {
@@ -151,31 +149,7 @@ void pump_water(int state, int water_temp) {
         }
         measuringMode = true;
     } else {
-        measuringMode = false; // 首先關閉量測模式
 
-        currentUsage = flowPulse * flowConstant;
-        flowPulse = 0;  // Reset the flow pulse count for the next measurement
-        
-        if (water_temp == 1) {
-            warmWaterUsage += currentUsage;
-        } else {
-            coldWaterUsage += currentUsage;
-        }
-
-        // 打印使用量
-        Serial.print("Total Water Usage: ");
-        Serial.print(warmWaterUsage + coldWaterUsage);
-        Serial.println("ml");
-        Serial.print("Warm Water Usage: ");
-        Serial.print(warmWaterUsage);
-        Serial.println("ml");
-        Serial.print("Cold Water Usage: ");
-        Serial.print(coldWaterUsage);
-        Serial.println("ml");
-
-        digitalWrite(waterpump, LOW);
-        digitalWrite(warmvalve, LOW);
-        digitalWrite(coldvalve, LOW);
     }
 }
 
