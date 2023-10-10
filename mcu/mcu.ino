@@ -166,26 +166,16 @@ void execute_actions(const String& actions) {
         return;
     }
 
-    for (JsonPair pair : doc.as<JsonObject>()) {
-        String key = pair.key().c_str();
-        int duration = pair.value().as<double>();
+    if (doc.containsKey("cold")) {
+        desiredFlow = doc["cold"];
+        pump_water(1, 0);
+    } else if (doc.containsKey("warm")) {
+        desiredFlow = doc["warm"];
+        pump_water(1, 1);
+    }
 
-        if (key == "cold") {
-          desiredFlow = duration;
-          water_temp = 0;
-        } else if (key == "warm") {
-          desiredFlow = duration;
-          water_temp = 1;
-        } else if (key.startsWith("slot")) {
-          int slot_number = key.substring(4).toInt() - 1;
-          if (slot_number >= 0 && slot_number < 10) {
-            durations[slot_number] = duration;
-          }
-        }
-      }
     unsigned long slotStartTimes[10] = {0};
-    bool isWaterPumpStarted = false;
-    double accumulatedFlow = 0;
+    bool isWaterPumpStarted = (desiredFlow > 0);
 
     for (int i = 0; i < 10; i++) {
         String slotKey = "slot" + String(i + 1);
@@ -201,27 +191,23 @@ void execute_actions(const String& actions) {
     }
 
     bool isSlotsRunning = true;
+    double accumulatedFlow = 0;
 
     while (isSlotsRunning || accumulatedFlow < desiredFlow) {
+        accumulatedFlow = flowPulse * flowConstant;
+        if (accumulatedFlow >= desiredFlow) {
+            pump_water(0, water_temp);
+        }
+
         unsigned long currentTime = millis();
+        isSlotsRunning = false;
 
         for (int i = 0; i < 10; i++) {
             if (slotStartTimes[i] != 0 && currentTime - slotStartTimes[i] >= (unsigned)durations[i]) {
                 digitalWrite(slotPins[i], LOW);
                 slotStartTimes[i] = 0;
-            }
-        }
-
-        accumulatedFlow = flowPulse * flowConstant;
-        if (accumulatedFlow >= desiredFlow) {
-            pump_water(0, 0);
-        }
-
-        isSlotsRunning = false;
-        for (int i = 0; i < 10; i++) {
-            if (slotStartTimes[i] != 0) {
+            } else if (slotStartTimes[i] != 0) {
                 isSlotsRunning = true;
-                break;
             }
         }
 
