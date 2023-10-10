@@ -14,9 +14,9 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-Const double flowConstantCold = 0.0015;
-Const double flowConstantWarm = 0.0015;
-double flowConstant = 0;
+//const double flowConstantCold = 0.0008344;
+//const double flowConstantWarm = 0.0008241;
+double flowConstant = 0.00081;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -124,18 +124,15 @@ void pump_water(int state, int water_temp) {
 
     if (state == 1) {
         digitalWrite(waterpump, HIGH);
+        measuringMode = true;
         
         if(water_temp == 1) {
             digitalWrite(warmvalve, HIGH);
             digitalWrite(coldvalve, LOW);
-            measuringMode = true;
-            flowConstant=flowConstantWarm;
 
         } else {
             digitalWrite(warmvalve, LOW);
             digitalWrite(coldvalve, HIGH);
-            measuringMode = true;
-            flowConstant=flowConstantCold;
         }
         
     } else {
