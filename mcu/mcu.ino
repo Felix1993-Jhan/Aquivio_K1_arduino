@@ -14,12 +14,12 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-const float flowConstant = 0.000041;
+const double flowConstant = 0.004;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
 double warmWaterUsage = 0;
-float currentUsage;
+double currentUsage;
 boolean isMeasuring = false;
 
 // Thermometer variables
