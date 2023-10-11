@@ -16,7 +16,7 @@ boolean stringComplete = false;
 const int flowmeterPin = A8;
 //const double flowConstantCold = 0.0008344;
 //const double flowConstantWarm = 0.0008241;
-double flowConstant = 0.0011;
+double flowConstant = 0.001142;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -104,9 +104,7 @@ void checkTemperature() {
 }
 
 ISR (PCINT2_vect) {
-    if (measuringMode) {
-        flowPulse++;
-    }
+   flowPulse++;
 }
 
 void serialEvent() {
@@ -143,8 +141,12 @@ void pump_water(int state, int water_temp) {
         measuringMode = false; // 首先關閉量測模式
         currentUsage = flowPulse * flowConstant;
 
+        Serial.print("pulse:");
+        Serial.print(flowPulse,6);
+        Serial.print("\n");
+        
         Serial.print("water usage:"); 
-        Serial.print(currentUsage);
+        Serial.print(currentUsage,3);
         Serial.print("\n");
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
