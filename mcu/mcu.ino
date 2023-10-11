@@ -65,6 +65,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
             digitalWrite(coldvalve, HIGH);
         }
         measuringMode = true;
+        flowPulse = 0; 
 
         if(desiredFlow > 0) {
             while (flowPulse * flowConstant < desiredFlow) {
@@ -79,8 +80,9 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         digitalWrite(coldvalve, LOW);
         
         currentUsage = flowPulse * flowConstant;
+
         Serial.print("pulse:");
-        Serial.print(flowPulse,6);
+        Serial.print(flowPulse);
         Serial.print("\n");
         
         Serial.print("water usage:"); 
