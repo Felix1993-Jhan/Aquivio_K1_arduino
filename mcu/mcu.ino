@@ -54,6 +54,47 @@ void setup() {
     PCMSK2 |= (1 << PCINT16);  // Enable pin change interrupt for A8 specifically
 }
 
+void pump_water(int state, int water_temp, double desiredFlow = -1) {
+    digitalWrite(watervalve, state == 1 ? HIGH : LOW);
+
+    if (state == 1) {
+        digitalWrite(waterpump, HIGH);
+        if(water_temp == 1) {
+            digitalWrite(warmvalve, HIGH);
+            digitalWrite(coldvalve, LOW);
+        } else {
+            digitalWrite(warmvalve, LOW);
+            digitalWrite(coldvalve, HIGH);
+        }
+        measuringMode = true;
+
+        if(desiredFlow > 0) {
+            while (flowPulse * flowConstant < desiredFlow) {
+                delay(10);
+            }
+            pump_water(0, water_temp);
+        }
+        
+    } else {
+        digitalWrite(waterpump, LOW);
+        digitalWrite(warmvalve, LOW);
+        digitalWrite(coldvalve, LOW);
+        
+        currentUsage = flowPulse * flowConstant;
+        Serial.print("pulse:");
+        Serial.print(flowPulse,6);
+        Serial.print("\n");
+        
+        Serial.print("water usage:"); 
+        Serial.print(currentUsage,3);
+        Serial.print("\n");
+
+        flowPulse = 0;  // Reset the flow pulse count for the next measurement
+        measuringMode = false;
+    }
+}
+
+
 void loop() {
     if (stringComplete) {
         inputString.trim();
@@ -123,47 +164,6 @@ void serialEvent() {
         }
     }
 }
-
-void pump_water(int state, int water_temp, double desiredFlow = -1) {
-    digitalWrite(watervalve, state == 1 ? HIGH : LOW);
-
-    if (state == 1) {
-        digitalWrite(waterpump, HIGH);
-        if(water_temp == 1) {
-            digitalWrite(warmvalve, HIGH);
-            digitalWrite(coldvalve, LOW);
-        } else {
-            digitalWrite(warmvalve, LOW);
-            digitalWrite(coldvalve, HIGH);
-        }
-        measuringMode = true;
-
-        if(desiredFlow > 0) {
-            while (flowPulse * flowConstant < desiredFlow) {
-                delay(10);
-            }
-            pump_water(0, water_temp);
-        }
-        
-    } else {
-        digitalWrite(waterpump, LOW);
-        digitalWrite(warmvalve, LOW);
-        digitalWrite(coldvalve, LOW);
-        
-        currentUsage = flowPulse * flowConstant;
-        Serial.print("pulse:");
-        Serial.print(flowPulse,6);
-        Serial.print("\n");
-        
-        Serial.print("water usage:"); 
-        Serial.print(currentUsage,3);
-        Serial.print("\n");
-
-        flowPulse = 0;  // Reset the flow pulse count for the next measurement
-        measuringMode = false;
-    }
-}
-
 
 
 void execute_actions(const String& actions) {
