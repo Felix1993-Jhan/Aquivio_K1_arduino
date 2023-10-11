@@ -14,7 +14,9 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-const double flowConstant = 0.004;
+//const double flowConstantCold = 0.0008344;
+//const double flowConstantWarm = 0.0008241;
+const double flowConstant = 0.001142;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -80,7 +82,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         
         currentUsage = flowPulse * flowConstant;
         Serial.print("pulse:");
-        Serial.print(flowPulse);
+        Serial.print(flowPulse,6);
         Serial.print("\n");
         
         Serial.print("water usage:"); 
@@ -95,11 +97,8 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 
 void loop() {
     if (stringComplete) {
-        String commandToProcess = inputString; // 保存當前的命令
-        inputString = ""; // 清空原始inputString
-
-        commandToProcess.trim();
-        Serial.println(commandToProcess);
+        inputString.trim();
+        Serial.println(inputString);
 
         // Processing commands
         if (inputString == "startcoldwater") {
