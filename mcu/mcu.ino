@@ -150,9 +150,13 @@ void pump_water(int state, int water_temp) {
         currentUsage = flowPulse * flowConstant;
 
         if(water_temp == 1) {
-            Serial.print(String("warm water usage:") + String(currentUsage) + "\n");
+            Serial.print("warm water usage:"); 
+            Serial.print(currentUsage);
+            Serial.print("\n");
         } else {
-            Serial.print(String("cold water usage:") + String(currentUsage) + "\n");
+            Serial.print("cold water usage:"); 
+            Serial.print(currentUsage); 
+            Serial.print("\n");
         }
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
