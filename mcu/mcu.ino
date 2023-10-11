@@ -143,21 +143,16 @@ void checkTemperature() {
 
 volatile unsigned long lastInterruptTime = 0;
 
+volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
+
 ISR(PCINT2_vect) {
-    unsigned long interruptTime = millis();
-
-    // If interrupts come faster than 10ms, assume it's a bounce and ignore
-    if (interruptTime - lastInterruptTime > 10) {
-        int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
-        if (lastFlowState == LOW && currentFlowState == HIGH) {
-            flowPulse++;
-        }
-        lastFlowState = currentFlowState; // 更新最後一次的狀態
+    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
+    if (lastFlowState == LOW && currentFlowState == HIGH) {
+        flowPulse++;
     }
-
-    lastInterruptTime = interruptTime;
+    lastFlowState = currentFlowState; // 更新最後一次的狀態
 }
-25
+
 
 void serialEvent() {
     while (Serial.available()) {
