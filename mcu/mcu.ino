@@ -65,14 +65,6 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
             digitalWrite(coldvalve, HIGH);
         }
         measuringMode = true;
-        flowPulse = 0; 
-
-        if(desiredFlow > 0) {
-            while (flowPulse * flowConstant < desiredFlow) {
-                delay(10);
-            }
-            pump_water(0, water_temp);
-        }
         
     } else {
         digitalWrite(waterpump, LOW);
