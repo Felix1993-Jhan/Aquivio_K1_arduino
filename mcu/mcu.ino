@@ -124,30 +124,33 @@ void serialEvent() {
     }
 }
 
-void pump_water(int state, int water_temp) {
+void pump_water(int state, int water_temp, double desiredFlow = -1) {
     digitalWrite(watervalve, state == 1 ? HIGH : LOW);
 
     if (state == 1) {
         digitalWrite(waterpump, HIGH);
-        measuringMode = true;
-        
         if(water_temp == 1) {
             digitalWrite(warmvalve, HIGH);
             digitalWrite(coldvalve, LOW);
-
         } else {
             digitalWrite(warmvalve, LOW);
             digitalWrite(coldvalve, HIGH);
+        }
+        measuringMode = true;
+
+        if(desiredFlow > 0) {
+            while (flowPulse * flowConstant < desiredFlow) {
+                delay(10);
+            }
+            pump_water(0, water_temp);
         }
         
     } else {
         digitalWrite(waterpump, LOW);
         digitalWrite(warmvalve, LOW);
         digitalWrite(coldvalve, LOW);
-
-        measuringMode = false; // 首先關閉量測模式
+        
         currentUsage = flowPulse * flowConstant;
-
         Serial.print("pulse:");
         Serial.print(flowPulse,6);
         Serial.print("\n");
@@ -157,6 +160,7 @@ void pump_water(int state, int water_temp) {
         Serial.print("\n");
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
+        measuringMode = false;
     }
 }
 
@@ -180,10 +184,10 @@ void execute_actions(const String& actions) {
 
     if (doc.containsKey("cold")) {
         desiredFlow = doc["cold"];
-        pump_water(1, 0);
+        pump_water(1, 0, desiredFlow);
     } else if (doc.containsKey("warm")) {
         desiredFlow = doc["warm"];
-        pump_water(1, 1);
+        pump_water(1, 1, desiredFlow);
     }
 
     unsigned long slotStartTimes[10] = {0};
