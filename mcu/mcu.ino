@@ -64,12 +64,18 @@ void loop() {
             pump_water(1, 0);
         } else if (inputString == "startwarmwater") {
             pump_water(1, 1);
-        } else if (inputString == "stop") {
+        } else if (inputString == "stopcoldwater") {
             pump_water(0, 0);
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
                 digitalWrite(slotPins[i], LOW);
             }
-        } else {
+        } else if (inputString == "stopwarmwater") {
+            pump_water(0, 1
+            );
+            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+                digitalWrite(slotPins[i], LOW);
+            }
+        }else {
             boolean slotStarted = false;
             for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
                 if (inputString == "startslot" + String(i + 1)) {
@@ -136,13 +142,19 @@ void pump_water(int state, int water_temp) {
         }
         
     } else {
-        measuringMode = false; // 首先關閉量測模式
-        currentUsage = flowPulse * flowConstant;
-        Serial.print(currentUsage);
-
         digitalWrite(waterpump, LOW);
         digitalWrite(warmvalve, LOW);
         digitalWrite(coldvalve, LOW);
+
+        measuringMode = false; // 首先關閉量測模式
+        currentUsage = flowPulse * flowConstant;
+
+        if(water_temp == 1) {
+            Serial.print("warm water usage:"+currentUsage+"\n");
+
+        } else {
+            Serial.print("cold water usage:"+currentUsage+"\n");
+        }
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
     }
