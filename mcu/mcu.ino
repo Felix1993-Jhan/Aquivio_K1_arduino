@@ -16,7 +16,7 @@ boolean stringComplete = false;
 const int flowmeterPin = A8;
 //const double flowConstantCold = 0.0008344;
 //const double flowConstantWarm = 0.0008241;
-double flowConstant = 0.001142;
+const double flowConstant = 0.001142;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -103,9 +103,16 @@ void checkTemperature() {
     }
 }
 
-ISR (PCINT2_vect) {
-   flowPulse++;
+volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
+
+ISR(PCINT2_vect) {
+    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
+    if (lastFlowState == LOW && currentFlowState == HIGH) {
+        flowPulse++;
+    }
+    lastFlowState = currentFlowState; // 更新最後一次的狀態
 }
+
 
 void serialEvent() {
     while (Serial.available()) {
