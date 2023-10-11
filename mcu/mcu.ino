@@ -14,9 +14,7 @@ boolean stringComplete = false;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
-//const double flowConstantCold = 0.0008344;
-//const double flowConstantWarm = 0.0008241;
-const double flowConstant = 0.001142;
+const double flowConstant = 0.004;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -93,7 +91,6 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         measuringMode = false;
     }
 }
-
 
 void loop() {
     if (stringComplete) {
