@@ -98,6 +98,7 @@ void checkTemperature() {
     if (tempC != DEVICE_DISCONNECTED_C) {
         Serial.print("Temp:");
         Serial.print(tempC);
+        Serial.print("\n");
     } else {
         Serial.println("No Temp");
     }
