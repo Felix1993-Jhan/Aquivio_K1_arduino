@@ -16,7 +16,7 @@ boolean stringComplete = false;
 const int flowmeterPin = A8;
 //const double flowConstantCold = 0.0008344;
 //const double flowConstantWarm = 0.0008241;
-double flowConstant = 0.00081;
+double flowConstant = 0.0011;
 volatile int flowPulse = 0;
 bool measuringMode = false;
 double coldWaterUsage = 0;
@@ -96,8 +96,8 @@ void checkTemperature() {
     temperatureSensor.requestTemperatures();
     float tempC = temperatureSensor.getTempCByIndex(0);
     if (tempC != DEVICE_DISCONNECTED_C) {
-        // Serial.print("Current Temperature: ");
-        // Serial.print(tempC);
+        Serial.print("Current Temperature: ");
+        Serial.print(tempC);
     } else {
         Serial.println("Temperature Sensor Disconnected...");
     }
