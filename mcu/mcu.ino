@@ -11,6 +11,7 @@ const int warmvalve = 20;
 const int waterpump = 19; 
 String inputString = "";
 boolean stringComplete = false;
+int currentTemp = 0;
 
 // Flowmeter variables
 const int flowmeterPin = A8;
@@ -60,9 +61,11 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         if(water_temp == 1) {
             digitalWrite(warmvalve, HIGH);
             digitalWrite(coldvalve, LOW);
+            currentTemp = 1;
         } else {
             digitalWrite(warmvalve, LOW);
             digitalWrite(coldvalve, HIGH);
+            currentTemp = 0;
         }
         measuringMode = true;
         
@@ -73,13 +76,19 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         
         currentUsage = flowPulse * flowConstant;
 
-        Serial.print("pulse:");
-        Serial.print(flowPulse);
-        Serial.print("\n");
-        
-        Serial.print("water usage:"); 
-        Serial.print(currentUsage,3);
-        Serial.print("\n");
+          Serial.print("pulse:");
+          Serial.print(flowPulse);
+          Serial.print("\n");
+
+        if(currentTemp == 1 ){        
+          Serial.print("warm water usage:"); 
+          Serial.print(currentUsage,3);
+          Serial.print("\n");
+        }else{
+          Serial.print("cold water usage:"); 
+          Serial.print(currentUsage,3);
+          Serial.print("\n");
+        }
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
         measuringMode = false;
@@ -178,9 +187,11 @@ void execute_actions(const String& actions) {
     if (doc.containsKey("cold")) {
         desiredFlow = doc["cold"];
         pump_water(1, 0, desiredFlow);
+        currentTemp = 1;
     } else if (doc.containsKey("warm")) {
         desiredFlow = doc["warm"];
         pump_water(1, 1, desiredFlow);
+        currentTemp = 0;
     }
 
     unsigned long slotStartTimes[10] = {0};
