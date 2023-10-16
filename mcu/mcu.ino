@@ -96,36 +96,51 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void loop() {
-    if (stringComplete) {
-        inputString.trim();
-        Serial.println(inputString);
+if (stringComplete) {
+    inputString.trim();
+    Serial.println(inputString);
 
-        // Processing commands
-        if (inputString == "startcoldwater") {
-            pump_water(1, 0);
-        } else if (inputString == "startwarmwater") {
-            pump_water(1, 1);
-        } else if (inputString == "stop") {
-            pump_water(0, 0);
-            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-                digitalWrite(slotPins[i], LOW);
-            }
-        } else {
-            boolean slotStarted = false;
-            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-                if (inputString == "startslot" + String(i + 1)) {
-                    digitalWrite(slotPins[i], HIGH);
-                    slotStarted = true;
-                    break;
-                }
-            }
-            if (!slotStarted) {
-                execute_actions(inputString);
+    // Processing commands
+    if (inputString == "startcoldwater") {
+        pump_water(1, 0);
+    } else if (inputString == "startwarmwater") {
+        pump_water(1, 1);
+    } else if (inputString == "stop") {
+        pump_water(0, 0);
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            digitalWrite(slotPins[i], LOW);
+        }
+    } else {
+        boolean slotCommandProcessed = false;
+
+        // Check for start slot commands
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            if (inputString == "startslot" + String(i + 1)) {
+                digitalWrite(slotPins[i], HIGH);
+                slotCommandProcessed = true;
+                break;
             }
         }
-        inputString = "";
-        stringComplete = false;
+
+        // Check for stop slot commands
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            if (inputString == "stopslot" + String(i + 1)) {
+                digitalWrite(slotPins[i], LOW);
+                slotCommandProcessed = true;
+                break;
+            }
+        }
+
+        // If no slot commands processed, check other actions
+        if (!slotCommandProcessed) {
+            execute_actions(inputString);
+        }
     }
+
+    inputString = "";
+    stringComplete = false;
+}
+
 
     if (millis() - lastTemperaturePrintTime >= 5000) {
         lastTemperaturePrintTime = millis();
