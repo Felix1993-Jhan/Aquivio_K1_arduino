@@ -13,6 +13,7 @@ String inputString = "";
 boolean stringComplete = false;
 int currentTemp = 0;
 unsigned long bufferReceiveTime = 0;  // added for timeout
+const unsigned long TIMEOUT_DURATION = 1000;  // 1 second timeout duration
 
 // Flowmeter variables
 const int flowmeterPin = A8;
@@ -143,10 +144,11 @@ void loop() {
     }
 
     // Check buffer timeout after receiving the first character
-    if (inputString.length() > 0 && millis() - bufferReceiveTime > 10000) {
+    if (inputString.length() > 0 && millis() - bufferReceiveTime > 500) {
         inputString = "";
         bufferReceiveTime = 0;
         stringComplete = false;
+        Serial.println("TIMEOUT\n");
     }
 
     if (millis() - lastTemperaturePrintTime >= 5000) {
@@ -162,7 +164,7 @@ void checkTemperature() {
     Serial.print("Temp:" + String(tempC) + "\n"); 
 
     } else {
-        Serial.println("No Temp");
+        Serial.println("No Temp\n");
     }
 }
 
@@ -198,14 +200,14 @@ void execute_actions(const String& actions) {
     double desiredFlow = 0;
     int water_temp = 0;
 
-    Serial.println("start");
+    Serial.println("start\n");
 
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, actions);
 
     // Check for deserialization error
     if (error) {
-        Serial.println("Failed to parse JSON!");
+        Serial.println("TIMEOUT\n");
         return;
     }
 
@@ -259,5 +261,5 @@ void execute_actions(const String& actions) {
         delay(10);
     }
 
-    Serial.println("end");
+    Serial.println("CONFIRM\n");
 }
