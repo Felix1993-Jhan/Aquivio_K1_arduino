@@ -97,6 +97,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 
 void loop() {
 if (stringComplete) {
+    inputString.replace("#", "");
     inputString.trim();
     Serial.println(inputString);
 
@@ -178,6 +179,7 @@ void serialEvent() {
         inputString += inChar;
         if (inChar == '#') {
             stringComplete = true;
+            
         }
     }
 }
