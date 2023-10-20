@@ -12,8 +12,6 @@ const int waterpump = 19;
 String inputString = "";
 boolean stringComplete = false;
 int currentTemp = 0;
-unsigned long bufferReceiveTime = 0;  // added for timeout
-const unsigned long TIMEOUT_DURATION = 1000;  // 1 second timeout duration
 
 // Flowmeter variables
 const int flowmeterPin = A8;
@@ -78,18 +76,18 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         
         currentUsage = flowPulse * flowConstant;
 
-        Serial.print("pulse:");
-        Serial.print(flowPulse);
-        Serial.print("\n");
+          Serial.print("pulse:");
+          Serial.print(flowPulse);
+          Serial.print("\n");
 
         if(currentTemp == 1 ){        
-            Serial.print("warm water usage:"); 
-            Serial.print(currentUsage,3);
-            Serial.print("\n");
-        } else {
-            Serial.print("cold water usage:"); 
-            Serial.print(currentUsage,3);
-            Serial.print("\n");
+          Serial.print("warm water usage:"); 
+          Serial.print(currentUsage,3);
+          Serial.print("\n");
+        }else{
+          Serial.print("cold water usage:"); 
+          Serial.print(currentUsage,3);
+          Serial.print("\n");
         }
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
@@ -98,58 +96,51 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void loop() {
-    if (stringComplete) {
-        inputString.trim();
-        Serial.println(inputString);
+if (stringComplete) {
+    inputString.trim();
+    Serial.println(inputString);
 
-        // Processing commands
-        if (inputString == "startcoldwater") {
-            pump_water(1, 0);
-        } else if (inputString == "startwarmwater") {
-            pump_water(1, 1);
-        } else if (inputString == "stop") {
-            pump_water(0, 0);
-            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-                digitalWrite(slotPins[i], LOW);
-            }
-        } else {
-            boolean slotCommandProcessed = false;
+    // Processing commands
+    if (inputString == "startcoldwater") {
+        pump_water(1, 0);
+    } else if (inputString == "startwarmwater") {
+        pump_water(1, 1);
+    } else if (inputString == "stop") {
+        pump_water(0, 0);
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            digitalWrite(slotPins[i], LOW);
+        }
+    } else {
+        boolean slotCommandProcessed = false;
 
-            // Check for start slot commands
-            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-                if (inputString == "startslot" + String(i + 1)) {
-                    digitalWrite(slotPins[i], HIGH);
-                    slotCommandProcessed = true;
-                    break;
-                }
-            }
-
-            // Check for stop slot commands
-            for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-                if (inputString == "stopslot" + String(i + 1)) {
-                    digitalWrite(slotPins[i], LOW);
-                    slotCommandProcessed = true;
-                    break;
-                }
-            }
-
-            // If no slot commands processed, check other actions
-            if (!slotCommandProcessed) {
-                execute_actions(inputString);
+        // Check for start slot commands
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            if (inputString == "startslot" + String(i + 1)) {
+                digitalWrite(slotPins[i], HIGH);
+                slotCommandProcessed = true;
+                break;
             }
         }
 
-        inputString = "";
-        stringComplete = false;
+        // Check for stop slot commands
+        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+            if (inputString == "stopslot" + String(i + 1)) {
+                digitalWrite(slotPins[i], LOW);
+                slotCommandProcessed = true;
+                break;
+            }
+        }
+
+        // If no slot commands processed, check other actions
+        if (!slotCommandProcessed) {
+            execute_actions(inputString);
+        }
     }
 
-    // Check buffer timeout after receiving the first character
-    if (inputString.length() > 0 && millis() - bufferReceiveTime > 500) {
-        inputString = "";
-        bufferReceiveTime = 0;
-        stringComplete = false;
-        Serial.println("TIMEOUT\n");
-    }
+    inputString = "";
+    stringComplete = false;
+}
+
 
     if (millis() - lastTemperaturePrintTime >= 5000) {
         lastTemperaturePrintTime = millis();
@@ -164,32 +155,29 @@ void checkTemperature() {
     Serial.print("Temp:" + String(tempC) + "\n"); 
 
     } else {
-        Serial.println("No Temp\n");
+        Serial.println("No Temp");
     }
 }
 
 volatile unsigned long lastInterruptTime = 0;
 
-volatile int lastFlowState = LOW; 
+volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
 
 ISR(PCINT2_vect) {
-    int currentFlowState = digitalRead(flowmeterPin);
+    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
     if (lastFlowState == LOW && currentFlowState == HIGH) {
         flowPulse++;
     }
-    lastFlowState = currentFlowState;
+    lastFlowState = currentFlowState; // 更新最後一次的狀態
 }
+
 
 void serialEvent() {
     while (Serial.available()) {
         char inChar = (char)Serial.read();
-        if (inputString.length() == 0) {    
-            bufferReceiveTime = millis();
-        }
         inputString += inChar;
         if (inChar == '\n') {
             stringComplete = true;
-            bufferReceiveTime = 0;  // Reset timeout timer
         }
     }
 }
@@ -200,14 +188,14 @@ void execute_actions(const String& actions) {
     double desiredFlow = 0;
     int water_temp = 0;
 
-    Serial.println("start\n");
+    Serial.println("start");
 
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, actions);
 
     // Check for deserialization error
     if (error) {
-        Serial.println("TIMEOUT\n");
+        Serial.println("Failed to parse JSON!");
         return;
     }
 
@@ -261,5 +249,5 @@ void execute_actions(const String& actions) {
         delay(10);
     }
 
-    Serial.println("CONFIRM\n");
+    Serial.println("end");
 }
