@@ -176,7 +176,7 @@ void serialEvent() {
     while (Serial.available()) {
         char inChar = (char)Serial.read();
         inputString += inChar;
-        if (inChar == '\n') {
+        if (inChar == '#') {
             stringComplete = true;
         }
     }
