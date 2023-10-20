@@ -21,7 +21,8 @@ bool measuringMode = false;
 double coldWaterUsage = 0;
 double warmWaterUsage = 0;
 double currentUsage;
-boolean isMeasuring = false;
+bool isMeasuring = false;
+bool tempstart = true;
 
 // Thermometer variables
 OneWire onewire(A1);
@@ -111,6 +112,7 @@ if (stringComplete) {
         for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
             digitalWrite(slotPins[i], LOW);
         }
+        tempstart = true;
     } else {
         boolean slotCommandProcessed = false;
 
@@ -128,6 +130,7 @@ if (stringComplete) {
             if (inputString == "stopslot" + String(i + 1)) {
                 digitalWrite(slotPins[i], LOW);
                 slotCommandProcessed = true;
+                tempstart = true;
                 break;
             }
         }
@@ -143,20 +146,22 @@ if (stringComplete) {
 }
 
 
-    if (millis() - lastTemperaturePrintTime >= 5000) {
+    if (millis() - lastTemperaturePrintTime >= 60000) {
         lastTemperaturePrintTime = millis();
         checkTemperature();
     }
 }
 
 void checkTemperature() {
-    temperatureSensor.requestTemperatures();
-    float tempC = temperatureSensor.getTempCByIndex(0);
-    if (tempC != DEVICE_DISCONNECTED_C) {
-    Serial.print("Temp:" + String(tempC) + "\n"); 
+    if(tempstart){
+        temperatureSensor.requestTemperatures();
+        float tempC = temperatureSensor.getTempCByIndex(0);
+        if (tempC != DEVICE_DISCONNECTED_C) {
+        Serial.print("Temp:" + String(tempC) + "\n"); 
 
-    } else {
-        Serial.println("No Temp");
+        } else {
+            Serial.println("No Temp");
+        }
     }
 }
 
@@ -179,8 +184,8 @@ void serialEvent() {
         inputString += inChar;
         if (inChar == '#') {
             stringComplete = true;
-            
         }
+        tempstart = false;
     }
 }
 
