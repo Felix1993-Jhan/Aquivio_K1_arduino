@@ -157,8 +157,7 @@ void checkTemperature() {
         temperatureSensor.requestTemperatures();
         float tempC = temperatureSensor.getTempCByIndex(0);
         if (tempC != DEVICE_DISCONNECTED_C) {
-        Serial.print("Temp:" + String(tempC) + "\n"); 
-
+            Serial.print("Temp:" + String(tempC) + "\n"); 
         } else {
             Serial.println("No Temp");
         }
