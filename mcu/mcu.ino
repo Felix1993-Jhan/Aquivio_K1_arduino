@@ -22,7 +22,7 @@ double coldWaterUsage = 0;
 double warmWaterUsage = 0;
 double currentUsage;
 bool isMeasuring = false;
-bool tempstart = true;
+bool canPrint = true;
 
 // Thermometer variables
 OneWire onewire(A1);
@@ -97,6 +97,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void loop() {
+if (!canPrint) return;
 if (stringComplete) {
     inputString.replace("#", "");
     inputString.trim();
@@ -153,7 +154,6 @@ if (stringComplete) {
 }
 
 void checkTemperature() {
-    if(tempstart){
         temperatureSensor.requestTemperatures();
         float tempC = temperatureSensor.getTempCByIndex(0);
         if (tempC != DEVICE_DISCONNECTED_C) {
@@ -162,7 +162,6 @@ void checkTemperature() {
         } else {
             Serial.println("No Temp");
         }
-    }
 }
 
 volatile unsigned long lastInterruptTime = 0;
@@ -179,6 +178,7 @@ ISR(PCINT2_vect) {
 
 
 void serialEvent() {
+    canPrint = false;
     while (Serial.available()) {
         char inChar = (char)Serial.read();
         inputString += inChar;
@@ -187,6 +187,7 @@ void serialEvent() {
         }
         tempstart = false;
     }
+    canPrint = true;
 }
 
 
