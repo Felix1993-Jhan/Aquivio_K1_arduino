@@ -113,7 +113,6 @@ if (stringComplete) {
         for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
             digitalWrite(slotPins[i], LOW);
         }
-        tempstart = true;
     } else {
         boolean slotCommandProcessed = false;
 
@@ -131,7 +130,6 @@ if (stringComplete) {
             if (inputString == "stopslot" + String(i + 1)) {
                 digitalWrite(slotPins[i], LOW);
                 slotCommandProcessed = true;
-                tempstart = true;
                 break;
             }
         }
@@ -147,7 +145,7 @@ if (stringComplete) {
 }
 
 
-    if (millis() - lastTemperaturePrintTime >= 3000) {
+    if (millis() - lastTemperaturePrintTime >= 300000) {
         lastTemperaturePrintTime = millis();
         checkTemperature();
     }
@@ -184,7 +182,6 @@ void serialEvent() {
         if (inChar == '#') {
             stringComplete = true;
         }
-        tempstart = false;
     }
     canPrint = true;
 }
