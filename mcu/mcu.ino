@@ -147,7 +147,7 @@ if (stringComplete) {
 }
 
 
-    if (millis() - lastTemperaturePrintTime >= 60000) {
+    if (millis() - lastTemperaturePrintTime >= 3000) {
         lastTemperaturePrintTime = millis();
         checkTemperature();
     }
