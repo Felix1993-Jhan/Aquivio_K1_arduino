@@ -34,14 +34,12 @@ DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 
 void setup() {
-    Serial.begin(9600);
-    memset(inputString, 0, MAX_INPUT_LENGTH);  // Initialize inputString with null terminators
-    Serial.println("ready");
 
     for (int i = 0; i < slotCount; i++) {
-        pinMode(slotPins[i], OUTPUT); 
-        digitalWrite(slotPins[i], LOW);
+    pinMode(slotPins[i], OUTPUT); 
+    digitalWrite(slotPins[i], LOW);
     }
+
     pinMode(bevvalve, OUTPUT);
     pinMode(watervalve, OUTPUT);
     pinMode(coldvalve, OUTPUT);
@@ -56,6 +54,10 @@ void setup() {
     pinMode(flowmeterPin, INPUT_PULLUP);
     PCICR |= (1 << PCIE2);   // Enable pin change interrupt for A8 to A15
     PCMSK2 |= (1 << PCINT16);  // Enable pin change interrupt for A8 specifically
+
+    Serial.begin(9600);
+    memset(inputString, 0, MAX_INPUT_LENGTH);  // Initialize inputString with null terminators
+    Serial.println("ready");
 }
 
 void pump_water(int state, int water_temp, double desiredFlow = -1) {
