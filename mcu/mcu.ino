@@ -4,12 +4,16 @@
 
 // General variables
 const int slotPins[] = {8,9,10,11,12,13,7,6,5,4};
+const int slotCount = sizeof(slotPins) / sizeof(slotPins[0]);
 const int bevvalve = 18;
 const int watervalve = 17;
 const int coldvalve = 21;
 const int warmvalve = 20;
 const int waterpump = 19; 
-String inputString = "";
+
+#define MAX_INPUT_LENGTH 200
+char inputString[MAX_INPUT_LENGTH];
+unsigned int inputLength = 0;
 boolean stringComplete = false;
 int currentTemp = 0;
 
@@ -31,10 +35,10 @@ unsigned long lastTemperaturePrintTime = 0;
 
 void setup() {
     Serial.begin(9600);
-    inputString.reserve(200);
+    memset(inputString, 0, MAX_INPUT_LENGTH);  // Initialize inputString with null terminators
     Serial.println("ready");
 
-    for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+    for (int i = 0; i < slotCount; i++) {
         pinMode(slotPins[i], OUTPUT); 
         digitalWrite(slotPins[i], LOW);
     }
@@ -97,71 +101,75 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void loop() {
-if (!canPrint) return;
-if (stringComplete) {
-    inputString.replace("#", "");
-    inputString.trim();
-    Serial.println(inputString);
+    if (!canPrint) return;
 
-    // Processing commands
-    if (inputString == "startcoldwater") {
-        pump_water(1, 0);
-    } else if (inputString == "startwarmwater") {
-        pump_water(1, 1);
-    } else if (inputString == "stop") {
-        pump_water(0, 0);
-        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-            digitalWrite(slotPins[i], LOW);
-        }
-        tempstart = true;
-    } else {
-        boolean slotCommandProcessed = false;
+    if (stringComplete) {
+        if (inputLength > 0 && inputString[inputLength - 1] == '#') {
+            inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
+            Serial.println(inputString);
 
-        // Check for start slot commands
-        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-            if (inputString == "startslot" + String(i + 1)) {
-                digitalWrite(slotPins[i], HIGH);
-                slotCommandProcessed = true;
-                break;
+            // Processing commands
+            if (strcmp(inputString, "startcoldwater") == 0) {
+                pump_water(1, 0);
+            } else if (strcmp(inputString, "startwarmwater") == 0) {
+                pump_water(1, 1);
+            } else if (strcmp(inputString, "stop") == 0) {
+                pump_water(0, 0);
+                for (int i = 0; i < slotCount; i++) {
+                    digitalWrite(slotPins[i], LOW);
+                }
+            } else {
+                boolean slotCommandProcessed = false;
+
+                // Check for start slot commands
+                for (int i = 0; i < slotCount; i++) {
+                    char command[15];
+                    sprintf(command, "startslot%d", i + 1);
+                    if (strcmp(inputString, command) == 0) {
+                        digitalWrite(slotPins[i], HIGH);
+                        slotCommandProcessed = true;
+                        break;
+                    }
+                }
+
+                // Check for stop slot commands
+                for (int i = 0; i < slotCount; i++) {
+                    char command[15];
+                    sprintf(command, "stopslot%d", i + 1);
+                    if (strcmp(inputString, command) == 0) {
+                        digitalWrite(slotPins[i], LOW);
+                        slotCommandProcessed = true;
+                        break;
+                    }
+                }
+
+                // If no slot commands processed, check other actions
+                if (!slotCommandProcessed) {
+                    execute_actions(inputString);
+                }
             }
-        }
 
-        // Check for stop slot commands
-        for (int i = 0; (unsigned)i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
-            if (inputString == "stopslot" + String(i + 1)) {
-                digitalWrite(slotPins[i], LOW);
-                slotCommandProcessed = true;
-                tempstart = true;
-                break;
-            }
-        }
-
-        // If no slot commands processed, check other actions
-        if (!slotCommandProcessed) {
-            execute_actions(inputString);
+            inputLength = 0;  // Reset input length
+            stringComplete = false;
         }
     }
 
-    inputString = "";
-    stringComplete = false;
-}
-
-
-    if (millis() - lastTemperaturePrintTime >= 3000) {
+    if (millis() - lastTemperaturePrintTime >= 300000) {
         lastTemperaturePrintTime = millis();
         checkTemperature();
     }
 }
 
 void checkTemperature() {
-        temperatureSensor.requestTemperatures();
-        float tempC = temperatureSensor.getTempCByIndex(0);
-        if (tempC != DEVICE_DISCONNECTED_C) {
-            Serial.print("Temp:" + String(tempC) + "\n"); 
-        } else {
-            Serial.println("No Temp");
-        }
+    temperatureSensor.requestTemperatures();
+    float tempC = temperatureSensor.getTempCByIndex(0);
+    if (tempC != DEVICE_DISCONNECTED_C) {
+        Serial.println("Temp: " + String(tempC));
+    } else {
+        Serial.println("No Temp");
+    }
 }
+
 
 volatile unsigned long lastInterruptTime = 0;
 
@@ -177,21 +185,22 @@ ISR(PCINT2_vect) {
 
 
 void serialEvent() {
-    canPrint = false;
     while (Serial.available()) {
         char inChar = (char)Serial.read();
-        inputString += inChar;
+        
+        if (inputLength < MAX_INPUT_LENGTH - 1) {  // Save space for null terminator
+            inputString[inputLength++] = inChar;
+        }
+
         if (inChar == '#') {
             stringComplete = true;
         }
-        tempstart = false;
     }
-    canPrint = true;
 }
 
 
-void execute_actions(const String& actions) {
-    double durations[10] = {0};
+void execute_actions(const char* actions) {
+    double durations[slotCount] = {0};
     double desiredFlow = 0;
     int water_temp = 0;
 
