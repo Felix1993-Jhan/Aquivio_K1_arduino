@@ -1,14 +1,14 @@
 #include <ArduinoJson.h>
-#include <DallasTemperature.h>
-#include <OneWire.h>
+// #include <DallasTemperature.h>
+// #include <OneWire.h>
 
 // General variables
-const int slotPins[] = {8,9,10,11,12,13,7,6,5,4};
+const int slotPins[] = {8,9,10,11,12,A13,7,6,5,4};
 const int slotCount = sizeof(slotPins) / sizeof(slotPins[0]);
 const int bevvalve = 18;
 const int watervalve = 17;
-const int coldvalve = 21;
-const int warmvalve = 20;
+const int coldvalve = A15;
+const int warmvalve = A14;
 const int waterpump = 19; 
 
 #define MAX_INPUT_LENGTH 200
@@ -29,8 +29,8 @@ bool isMeasuring = false;
 bool canPrint = true;
 
 // Thermometer variables
-OneWire onewire(A1);
-DallasTemperature temperatureSensor(&onewire);
+// OneWire onewire(A1);
+// DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 
 void setup() {
@@ -156,20 +156,20 @@ void loop() {
         }
     }
 
-    if (millis() - lastTemperaturePrintTime >= 300000) {
-        lastTemperaturePrintTime = millis();
-        checkTemperature();
-    }
+    // if (millis() - lastTemperaturePrintTime >= 300000) {
+    //     lastTemperaturePrintTime = millis();
+    //     checkTemperature();
+    // }
 }
 
 void checkTemperature() {
-    temperatureSensor.requestTemperatures();
-    float tempC = temperatureSensor.getTempCByIndex(0);
-    if (tempC != DEVICE_DISCONNECTED_C) {
-        Serial.println("Temp: " + String(tempC));
-    } else {
-        Serial.println("No Temp");
-    }
+    // temperatureSensor.requestTemperatures();
+    // float tempC = temperatureSensor.getTempCByIndex(0);
+    // if (tempC != DEVICE_DISCONNECTED_C) {
+    //     Serial.println("Temp: " + String(tempC));
+    // } else {
+    //     Serial.println("No Temp");
+    // }
 }
 
 
@@ -230,12 +230,18 @@ void execute_actions(const char* actions) {
     unsigned long slotStartTimes[10] = {0};
     bool isWaterPumpStarted = (desiredFlow > 0);
 
+    // Sort slots in descending order
+    int sortedSlots[10];
     for (int i = 0; i < 10; i++) {
-        String slotKey = "slot" + String(i + 1);
+        sortedSlots[i] = 10 - i; // 10, 9, 8, ..., 1
+    }
+
+    for (int i = 0; i < 10; i++) {
+        String slotKey = "slot" + String(sortedSlots[i]);
         if (doc.containsKey(slotKey)) {
-            durations[i] = doc[slotKey];
-            digitalWrite(slotPins[i], HIGH);
-            slotStartTimes[i] = millis();
+            durations[sortedSlots[i] - 1] = doc[slotKey];
+            digitalWrite(slotPins[sortedSlots[i] - 1], HIGH);
+            slotStartTimes[sortedSlots[i] - 1] = millis();
             if (!isWaterPumpStarted) {
                 isWaterPumpStarted = true;
             }
