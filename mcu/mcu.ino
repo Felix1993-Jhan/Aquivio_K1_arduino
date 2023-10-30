@@ -1,6 +1,7 @@
 #include <ArduinoJson.h>
 // #include <DallasTemperature.h>
 // #include <OneWire.h>
+#include <avr/wdt.h>
 
 // General variables
 const int slotPins[] = {8,9,10,11,12,A13,7,6,5,4};
@@ -34,6 +35,11 @@ bool canPrint = true;
 unsigned long lastTemperaturePrintTime = 0; 
 
 void setup() {
+
+    wdt_enable(WDTO_8S);
+
+    // Clear reset flags for next time
+    MCUSR = 0;
 
     for (int i = 0; i < slotCount; i++) {
     pinMode(slotPins[i], OUTPUT); 
@@ -103,6 +109,9 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void loop() {
+
+    wdt_reset();   
+
     if (!canPrint) return;
 
     if (stringComplete) {
@@ -154,6 +163,7 @@ void loop() {
             inputLength = 0;  // Reset input length
             stringComplete = false;
         }
+        
     }
 
     // if (millis() - lastTemperaturePrintTime >= 300000) {
@@ -271,6 +281,7 @@ void execute_actions(const char* actions) {
         }
 
         delay(10);
+        wdt_reset();
     }
 
     Serial.println("end");
