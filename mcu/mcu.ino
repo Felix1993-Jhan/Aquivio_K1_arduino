@@ -1,6 +1,6 @@
 #include <ArduinoJson.h>
-// #include <DallasTemperature.h>
-// #include <OneWire.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
 #include <avr/wdt.h>
 
 // General variables
@@ -30,8 +30,8 @@ bool isMeasuring = false;
 bool canPrint = true;
 
 // Thermometer variables
-// OneWire onewire(A1);
-// DallasTemperature temperatureSensor(&onewire);
+OneWire onewire(A1);
+DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 
 void setup() {
@@ -166,20 +166,22 @@ void loop() {
         
     }
 
-    // if (millis() - lastTemperaturePrintTime >= 300000) {
-    //     lastTemperaturePrintTime = millis();
-    //     checkTemperature();
-    // }
+    if (millis() - lastTemperaturePrintTime >= 300000) {
+        lastTemperaturePrintTime = millis();
+        checkTemperature();
+    }
 }
 
 void checkTemperature() {
-    // temperatureSensor.requestTemperatures();
-    // float tempC = temperatureSensor.getTempCByIndex(0);
-    // if (tempC != DEVICE_DISCONNECTED_C) {
-    //     Serial.println("Temp: " + String(tempC));
-    // } else {
-    //     Serial.println("No Temp");
-    // }
+    temperatureSensor.requestTemperatures();
+    float tempC = temperatureSensor.getTempCByIndex(0);
+    if (tempC != DEVICE_DISCONNECTED_C) {
+        Serial.println("Temp: " + String(tempC) + "\n");
+
+    } else {
+        Serial.println("No Temp \n");
+
+    }
 }
 
 
