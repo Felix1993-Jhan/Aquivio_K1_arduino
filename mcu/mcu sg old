@@ -1,0 +1,189 @@
+#include <ArduinoJson.h>
+
+const int slotPins[] = {22, 24, 26, 28, 30, 32, 34, 36, 38, 40};
+const int bevvalve = 48;
+const int watervalve = 50;
+const int coldvalve = 42;
+const int warmvalve = 44;
+const int waterpump = 46;                                                             
+
+String inputString = "";
+boolean stringComplete = false;
+
+void setup() {
+  Serial.begin(9600);
+  inputString.reserve(200);
+  Serial.println("ready");
+
+  // Set all the pins as outputs and initialize them as LOW
+  for (int i = 0; i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+    pinMode(slotPins[i], OUTPUT);
+    digitalWrite(slotPins[i], LOW);
+  }
+  pinMode(bevvalve, OUTPUT);
+  digitalWrite(bevvalve, LOW);
+  pinMode(watervalve, OUTPUT);
+  digitalWrite(watervalve, LOW);
+  pinMode(coldvalve, OUTPUT);
+  digitalWrite(coldvalve, LOW);
+  pinMode(warmvalve, OUTPUT);
+  digitalWrite(warmvalve, LOW);
+  pinMode(waterpump, OUTPUT);
+  digitalWrite(waterpump, LOW);
+}
+
+void loop() {
+  if (stringComplete) {
+    inputString.trim();
+    Serial.println(inputString);
+
+    // Check if we received a command to start the cold water pump
+    if (inputString == "startcoldwater") {
+      pump_water(1, 0);  // Start the water pump with cold water
+    }
+    // Check if we received a command to start the warm water pump
+    else if (inputString == "startwarmwater") {
+      pump_water(1, 1);  // Start the water pump with warm water
+    }
+    // Check if we received a command to stop the water pump
+    else if (inputString == "stop") {
+      pump_water(0, 0);  // Stop the water pump, temperature doesn't matter
+      // Stop all the slots
+      for (int i = 0; i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+        digitalWrite(slotPins[i], LOW);
+      }
+    }
+    else {
+      // Check if we received a command to start a slot
+      boolean slotStarted = false;
+      for (int i = 0; i < sizeof(slotPins) / sizeof(slotPins[0]); i++) {
+        if (inputString == "startslot" + String(i + 1)) {
+          digitalWrite(slotPins[i], HIGH);
+          slotStarted = true;
+          break;
+        }
+      }
+
+      // If we didn't receive a specific command to start a slot, treat the input as a JSON string
+      if (!slotStarted) {
+        execute_actions(inputString);
+      }
+    }
+    inputString = "";
+    stringComplete = false;
+  }
+}
+
+
+
+void serialEvent() {
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    inputString += inChar;
+    if (inChar == '\n') {
+      stringComplete = true;
+    }
+  }
+}
+
+void pump_water(int state, int water_temp) {
+  digitalWrite(watervalve, state == 1 ? HIGH : LOW); // 控制 watervalve 根據 state 的值
+  digitalWrite(waterpump, state == 1 ? HIGH : LOW);
+  
+  // 根據 state 和 water_temp 控制 warmvalve
+  if (state == 1) {
+    digitalWrite(warmvalve, water_temp == 1 ? HIGH : LOW);
+  } else {
+    digitalWrite(warmvalve, LOW);
+  }
+  
+  // 根據 state 和 water_temp 控制 coldvalve
+  if (state == 1) {
+    digitalWrite(coldvalve, water_temp == 0 ? HIGH : LOW);
+  } else {
+    digitalWrite(coldvalve, LOW);
+  }
+}
+
+void execute_actions(const String& actions) {
+  int durations[10] = {0};
+  int temperatureDuration = 0;
+  int water_temp = 0;
+  Serial.println("start");
+
+  StaticJsonDocument<200> doc;
+  deserializeJson(doc, actions);
+
+  // Read in the values and store them in the appropriate variables
+  for (JsonPair pair : doc.as<JsonObject>()) {
+    String key = pair.key().c_str();
+    int duration = pair.value().as<int>();
+
+    if (key == "cold") {
+      temperatureDuration = duration;
+      water_temp = 0;
+    } else if (key == "warm") {
+      temperatureDuration = duration;
+      water_temp = 1;
+    } else if (key.startsWith("slot")) {
+      int slot_number = key.substring(4).toInt() - 1;
+      if (slot_number >= 0 && slot_number < 10) {
+        durations[slot_number] = duration;
+      }
+    }
+  }
+
+  unsigned long slotStartTimes[10] = {0};
+  unsigned long waterStartTime = 0;
+  
+  // Start the water pump as soon as the first slot is activated
+  bool isWaterPumpStarted = false;
+
+  for (int i = 0; i < 10; i++) {
+    if (durations[i] > 0) {
+      digitalWrite(slotPins[i], HIGH);
+      slotStartTimes[i] = millis();
+      if (!isWaterPumpStarted) {
+        pump_water(1, water_temp); // Start the water pump
+        waterStartTime = millis();
+        isWaterPumpStarted = true;
+      }
+      delay(500);
+    }
+  }
+
+  bool isSlotsRunning = true;
+  bool isWaterRunning = true;
+
+  // Run until both slots and water pump are not running
+  while (isSlotsRunning || isWaterRunning) {
+    unsigned long currentTime = millis();
+
+    // Check if slots are running and update their status
+    for (int i = 0; i < 10; i++) {
+      if (slotStartTimes[i] != 0 && currentTime - slotStartTimes[i] >= durations[i]) {
+        digitalWrite(slotPins[i], LOW);
+        slotStartTimes[i] = 0;
+      }
+    }
+
+    // Check if water pump is running and update its status
+    if (isWaterRunning && currentTime - waterStartTime >= temperatureDuration) {
+      pump_water(0, water_temp); // Stop the water pump
+      isWaterRunning = false;
+    }
+
+    // Check if any slots are still running
+    isSlotsRunning = false;
+    for (int i = 0; i < 10; i++) {
+      if (slotStartTimes[i] != 0) {
+        isSlotsRunning = true;
+        break;
+      }
+    }
+
+    // Avoid blocking in the while loop
+    delay(10);
+  }
+  Serial.println("end");
+}

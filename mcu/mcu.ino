@@ -1,7 +1,4 @@
 #include <ArduinoJson.h>
-#include <DallasTemperature.h>
-#include <OneWire.h>
-#include <avr/wdt.h>
 
 // General variables
 const int slotPins[] = {8,9,10,11,12,A13,7,6,5,4};
@@ -18,21 +15,7 @@ unsigned int inputLength = 0;
 boolean stringComplete = false;
 int currentTemp = 0;
 
-// Flowmeter variables
-const int flowmeterPin = A8;
-const double flowConstant = 0.0037;
-volatile int flowPulse = 0;
-bool measuringMode = false;
-double coldWaterUsage = 0;
-double warmWaterUsage = 0;
-double currentUsage;
-bool isMeasuring = false;
-bool canPrint = true;
 
-// Thermometer variables
-OneWire onewire(A1);
-DallasTemperature temperatureSensor(&onewire);
-unsigned long lastTemperaturePrintTime = 0; 
 
 void setup() {
 
@@ -57,10 +40,6 @@ void setup() {
     digitalWrite(warmvalve, LOW);
     digitalWrite(waterpump, LOW);
 
-    pinMode(flowmeterPin, INPUT_PULLUP);
-    PCICR |= (1 << PCIE2);   // Enable pin change interrupt for A8 to A15
-    PCMSK2 |= (1 << PCINT16);  // Enable pin change interrupt for A8 specifically
-
     Serial.begin(9600);
     memset(inputString, 0, MAX_INPUT_LENGTH);  // Initialize inputString with null terminators
     Serial.println("ready");
@@ -80,32 +59,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
             digitalWrite(coldvalve, HIGH);
             currentTemp = 0;
         }
-        measuringMode = true;
-        
-    } else {
-        digitalWrite(waterpump, LOW);
-        digitalWrite(warmvalve, LOW);
-        digitalWrite(coldvalve, LOW);
-        
-        currentUsage = flowPulse * flowConstant;
-
-          Serial.print("pulse:");
-          Serial.print(flowPulse);
-          Serial.print("\n");
-
-        if(currentTemp == 1 ){        
-          Serial.print("warm water usage:"); 
-          Serial.print(currentUsage,3);
-          Serial.print("\n");
-        }else{
-          Serial.print("cold water usage:"); 
-          Serial.print(currentUsage,3);
-          Serial.print("\n");
-        }
-
-        flowPulse = 0;  // Reset the flow pulse count for the next measurement
-        measuringMode = false;
-    }
+     }
 }
 
 void loop() {
@@ -165,38 +119,7 @@ void loop() {
         }
         
     }
-
-    if (millis() - lastTemperaturePrintTime >= 300000) {
-        lastTemperaturePrintTime = millis();
-        checkTemperature();
-    }
 }
-
-void checkTemperature() {
-    temperatureSensor.requestTemperatures();
-    float tempC = temperatureSensor.getTempCByIndex(0);
-    if (tempC != DEVICE_DISCONNECTED_C) {
-        Serial.println("Temp: " + String(tempC) + "\n");
-
-    } else {
-        Serial.println("No Temp \n");
-
-    }
-}
-
-
-volatile unsigned long lastInterruptTime = 0;
-
-volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
-
-ISR(PCINT2_vect) {
-    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
-    if (lastFlowState == LOW && currentFlowState == HIGH) {
-        flowPulse++;
-    }
-    lastFlowState = currentFlowState; // 更新最後一次的狀態
-}
-
 
 void serialEvent() {
     while (Serial.available()) {
