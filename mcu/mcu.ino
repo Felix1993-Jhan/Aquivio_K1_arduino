@@ -117,7 +117,9 @@ void loop() {
     if (stringComplete) {
         if (inputLength > 0 && inputString[inputLength - 1] == '#') {
             inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
-            Serial.println(inputString);
+            if (strcmp(inputString, "ping") != 0) {
+                Serial.println(inputString);
+            }
 
             // Processing commands
             if (strcmp(inputString, "ping") == 0) {
