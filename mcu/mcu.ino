@@ -120,7 +120,9 @@ void loop() {
             Serial.println(inputString);
 
             // Processing commands
-            if (strcmp(inputString, "startcoldwater") == 0) {
+            if (strcmp(inputString, "ping") == 0) {
+                Serial.println("pong#");
+            } else if (strcmp(inputString, "startcoldwater") == 0) {
                 pump_water(1, 0);
             } else if (strcmp(inputString, "startwarmwater") == 0) {
                 pump_water(1, 1);
