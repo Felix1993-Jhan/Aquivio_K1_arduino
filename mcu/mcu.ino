@@ -2,6 +2,7 @@
 // #include <DallasTemperature.h>
 // #include <OneWire.h>
 #include <avr/wdt.h>
+#include <MemoryFree.h>
 
 // General variables
 const int slotPins[] = {8,9,10,11,12,A13,7,6,5,4};
@@ -33,6 +34,8 @@ bool canPrint = true;
 // OneWire onewire(A1);
 // DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
+unsigned long lastMemoryPrintTime = 0; 
+const unsigned long memoryPrintInterval = 1000; // Print every 1000 ms (1 second)
 
 void setup() {
 
@@ -113,6 +116,13 @@ void loop() {
     wdt_reset();   
 
     if (!canPrint) return;
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastMemoryPrintTime >= memoryPrintInterval) {
+        Serial.print("Free memory: ");
+        Serial.println(freeMemory());
+        lastMemoryPrintTime = currentMillis;
+    }
 
     if (stringComplete) {
         if (inputLength > 0 && inputString[inputLength - 1] == '#') {
