@@ -1,7 +1,0 @@
-{
-    "configuration": "cpu=atmega2560",
-    "board": "arduino:avr:mega",
-    "port": "/dev/tty.usbmodem2101",
-    "sketch": "mcu/mcu.ino",
-    "output": "./build"
-}
