@@ -37,7 +37,7 @@ bool canPrint = true;
 // DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 unsigned long lastMemoryPrintTime = 0; 
-const unsigned long memoryPrintInterval = 1000; // Print every 1000 ms (1 second)
+const unsigned long memoryPrintInterval = 10 * 1000; // Print every 1000 ms (1 second)
 
 void setup() {
 
