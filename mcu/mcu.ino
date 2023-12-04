@@ -37,7 +37,7 @@ bool canPrint = true;
 // DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
 unsigned long lastMemoryPrintTime = 0; 
-const unsigned long memoryPrintInterval = 10 * 1000; // Print every 1000 ms (1 second)
+const unsigned long memoryPrintInterval = 30 * 1000; // Print every 1000 ms (1 second)
 
 void setup() {
 
@@ -113,81 +113,6 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
     }
 }
 
-void loop() {
-
-    wdt_reset();   
-
-    if (!canPrint) return;
-
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastMemoryPrintTime >= memoryPrintInterval) {
-        Serial.print("Free memory: ");
-        Serial.println(freeMemory());
-        lastMemoryPrintTime = currentMillis;
-    }
-
-    if (stringComplete) {
-        if (inputLength > 0 && inputString[inputLength - 1] == '#') {
-            inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
-            if (strcmp(inputString, "ping") != 0) {
-                Serial.println(inputString);
-            }
-
-            // Processing commands
-            if (strcmp(inputString, "ping") == 0) {
-                Serial.println("pong\n");
-            } else if (strcmp(inputString, "startcoldwater") == 0) {
-                pump_water(1, 0);
-            } else if (strcmp(inputString, "startwarmwater") == 0) {
-                pump_water(1, 1);
-            } else if (strcmp(inputString, "stop") == 0) {
-                pump_water(0, 0);
-                for (int i = 0; i < slotCount; i++) {
-                    digitalWrite(slotPins[i], LOW);
-                }
-            } else {
-                boolean slotCommandProcessed = false;
-
-                // Check for start slot commands
-                for (int i = 0; i < slotCount; i++) {
-                    char command[15];
-                    sprintf(command, "startslot%d", i + 1);
-                    if (strcmp(inputString, command) == 0) {
-                        digitalWrite(slotPins[i], HIGH);
-                        slotCommandProcessed = true;
-                        break;
-                    }
-                }
-
-                // Check for stop slot commands
-                for (int i = 0; i < slotCount; i++) {
-                    char command[15];
-                    sprintf(command, "stopslot%d", i + 1);
-                    if (strcmp(inputString, command) == 0) {
-                        digitalWrite(slotPins[i], LOW);
-                        slotCommandProcessed = true;
-                        break;
-                    }
-                }
-
-                // If no slot commands processed, check other actions
-                if (!slotCommandProcessed) {
-                    execute_actions(inputString);
-                }
-            }
-
-            inputLength = 0;  // Reset input length
-            stringComplete = false;
-        }
-        
-    }
-
-    // if (millis() - lastTemperaturePrintTime >= 300000) {
-    //     lastTemperaturePrintTime = millis();
-    //     checkTemperature();
-    // }
-}
-
 void checkTemperature() {
     // temperatureSensor.requestTemperatures();
     // float tempC = temperatureSensor.getTempCByIndex(0);
@@ -197,7 +122,6 @@ void checkTemperature() {
     //     Serial.println("No Temp");
     // }
 }
-
 
 volatile unsigned long lastInterruptTime = 0;
 
@@ -210,7 +134,6 @@ ISR(PCINT2_vect) {
     }
     lastFlowState = currentFlowState; // 更新最後一次的狀態
 }
-
 
 void serialEvent() {
     while (Serial.available()) {
@@ -225,7 +148,6 @@ void serialEvent() {
         }
     }
 }
-
 
 void execute_actions(const char* actions) {
     double durations[slotCount] = {0};
@@ -301,4 +223,79 @@ void execute_actions(const char* actions) {
     }
 
     Serial.println("end");
+}
+
+void loop() {
+
+    wdt_reset();
+
+    if (!canPrint) return;
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastMemoryPrintTime >= memoryPrintInterval) {
+        Serial.print("Free memory: ");
+        Serial.println(freeMemory());
+        lastMemoryPrintTime = currentMillis;
+    }
+
+    if (stringComplete) {
+        if (inputLength > 0 && inputString[inputLength - 1] == '#') {
+            inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
+            if (strcmp(inputString, "ping") != 0) {
+                Serial.println(inputString);
+            }
+
+            // Processing commands
+            if (strcmp(inputString, "ping") == 0) {
+                Serial.println("pong\n");
+            } else if (strcmp(inputString, "startcoldwater") == 0) {
+                pump_water(1, 0);
+            } else if (strcmp(inputString, "startwarmwater") == 0) {
+                pump_water(1, 1);
+            } else if (strcmp(inputString, "stop") == 0) {
+                pump_water(0, 0);
+                for (int i = 0; i < slotCount; i++) {
+                    digitalWrite(slotPins[i], LOW);
+                }
+            } else {
+                boolean slotCommandProcessed = false;
+
+                // Check for start slot commands
+                for (int i = 0; i < slotCount; i++) {
+                    char command[15];
+                    sprintf(command, "startslot%d", i + 1);
+                    if (strcmp(inputString, command) == 0) {
+                        digitalWrite(slotPins[i], HIGH);
+                        slotCommandProcessed = true;
+                        break;
+                    }
+                }
+
+                // Check for stop slot commands
+                for (int i = 0; i < slotCount; i++) {
+                    char command[15];
+                    sprintf(command, "stopslot%d", i + 1);
+                    if (strcmp(inputString, command) == 0) {
+                        digitalWrite(slotPins[i], LOW);
+                        slotCommandProcessed = true;
+                        break;
+                    }
+                }
+
+                // If no slot commands processed, check other actions
+                if (!slotCommandProcessed) {
+                    execute_actions(inputString);
+                }
+            }
+
+            inputLength = 0;  // Reset input length
+            stringComplete = false;
+        }
+        
+    }
+
+    // if (millis() - lastTemperaturePrintTime >= 300000) {
+    //     lastTemperaturePrintTime = millis();
+    //     checkTemperature();
+    // }
 }
