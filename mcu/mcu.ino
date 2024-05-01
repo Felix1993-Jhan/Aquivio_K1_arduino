@@ -73,6 +73,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
     digitalWrite(watervalve, state == 1 ? HIGH : LOW);
 
     if (state == 1) {
+        digitalWrite(waterpump, HIGH);
         if(water_temp == 1) {
             digitalWrite(warmvalve, HIGH);
             digitalWrite(coldvalve, LOW);
@@ -83,9 +84,7 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
             currentTemp = 0;
         }
         measuringMode = true;
-        delay(5000);
-        digitalWrite(waterpump, HIGH);
-
+        
     } else {
         digitalWrite(waterpump, LOW);
         digitalWrite(warmvalve, LOW);
