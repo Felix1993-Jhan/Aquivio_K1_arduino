@@ -1,6 +1,4 @@
 #include <ArduinoJson.h>
-
-#include <ArduinoJson.h>
 // #include <DallasTemperature.h>
 // #include <OneWire.h>
 #include <avr/wdt.h>
@@ -193,7 +191,7 @@ void execute_actions(const char* actions) {
             if (!isWaterPumpStarted) {
                 isWaterPumpStarted = true;
             }
-            delay(500);
+            delay(100);
         }
     }
 
