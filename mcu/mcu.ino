@@ -34,8 +34,10 @@ bool canPrint = true;
 // OneWire onewire(A1);
 // DallasTemperature temperatureSensor(&onewire);
 unsigned long lastTemperaturePrintTime = 0; 
-unsigned long lastMemoryPrintTime = 0; 
-const unsigned long memoryPrintInterval = 30 * 1000; // Print every 1000 ms (1 second)
+unsigned long lastMemoryPrintTime = 0;
+unsigned long lastmcuAliveTime = 0; 
+const unsigned long memoryPrintInterval = 300 * 1000; // Print every 1000 ms (1 second)
+const unsigned long mcuAliveInterval = 1 * 1000; // Print every 1000 ms (1 second)
 
 void setup() {
 
@@ -234,6 +236,11 @@ void loop() {
         Serial.print("Free memory: ");
         Serial.println(freeMemory());
         lastMemoryPrintTime = currentMillis;
+    }
+
+    if (currentMillis - lastmcuAliveTime >= mcuAliveInterval) {
+        Serial.print("mcuAlive \n");
+        lastmcuAliveTime = currentMillis;
     }
 
     if (stringComplete) {
