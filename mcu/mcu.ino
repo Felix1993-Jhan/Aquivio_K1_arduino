@@ -243,7 +243,7 @@ void execute_actions(const char* actions) {
             }
         }
 
-        if (millis() - lastProgressLog >= 5000) {
+        if (millis() - lastProgressLog >= 1000) {
             Serial.print("Progress - Accumulated flow: ");
             Serial.print(accumulatedFlow);
             Serial.print(" / Desired flow: ");
