@@ -154,25 +154,29 @@ void execute_actions(const char* actions) {
     double desiredFlow = 0;
     int water_temp = 0;
 
-    Serial.println("start");
+    Serial.println("execute_actions: start");
 
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, actions);
 
     // Check for deserialization error
     if (error) {
-        Serial.println("Failed to parse JSON!");
+        Serial.println("execute_actions: Failed to parse JSON!");
         return;
     }
+
+    Serial.println("execute_actions: JSON parsed successfully");
 
     if (doc.containsKey("cold")) {
         desiredFlow = doc["cold"];
         pump_water(1, 0, desiredFlow);
         currentTemp = 1;
+        Serial.println("execute_actions: Cold water pump started");
     } else if (doc.containsKey("warm")) {
         desiredFlow = doc["warm"];
         pump_water(1, 1, desiredFlow);
         currentTemp = 0;
+        Serial.println("execute_actions: Warm water pump started");
     }
 
     unsigned long slotStartTimes[10] = {0};
@@ -193,17 +197,22 @@ void execute_actions(const char* actions) {
             if (!isWaterPumpStarted) {
                 isWaterPumpStarted = true;
             }
+            Serial.print("execute_actions: Slot ");
+            Serial.print(sortedSlots[i]);
+            Serial.println(" activated");
             delay(500);
         }
     }
 
     bool isSlotsRunning = true;
     double accumulatedFlow = 0;
+    unsigned long lastLogTime = 0;
 
     while (isSlotsRunning || accumulatedFlow < desiredFlow) {
         accumulatedFlow = flowPulse * flowConstant;
-        if (accumulatedFlow >= desiredFlow) {
+        if (accumulatedFlow >= desiredFlow && desiredFlow > 0) {
             pump_water(0, water_temp);
+            Serial.println("execute_actions: Desired flow reached, pump stopped");
         }
 
         unsigned long currentTime = millis();
@@ -213,6 +222,9 @@ void execute_actions(const char* actions) {
             if (slotStartTimes[i] != 0 && currentTime - slotStartTimes[i] >= (unsigned)durations[i]) {
                 digitalWrite(slotPins[i], LOW);
                 slotStartTimes[i] = 0;
+                Serial.print("execute_actions: Slot ");
+                Serial.print(i + 1);
+                Serial.println(" deactivated");
             } else if (slotStartTimes[i] != 0) {
                 isSlotsRunning = true;
             }
@@ -220,9 +232,18 @@ void execute_actions(const char* actions) {
 
         delay(10);
         wdt_reset();
+
+        // Log progress every second
+        if (currentTime - lastLogTime >= 1000) {
+            Serial.print("execute_actions: Accumulated flow: ");
+            Serial.print(accumulatedFlow);
+            Serial.print(" / ");
+            Serial.println(desiredFlow);
+            lastLogTime = currentTime;
+        }
     }
 
-    Serial.println("end");
+    Serial.println("execute_actions: end");
 }
 
 void loop() {
