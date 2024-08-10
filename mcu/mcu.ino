@@ -1,6 +1,4 @@
 #include <ArduinoJson.h>
-// #include <DallasTemperature.h>
-// #include <OneWire.h>
 #include <avr/wdt.h>
 #include "MemoryFree.h"
 
@@ -23,6 +21,7 @@ int currentTemp = 0;
 const int flowmeterPin = A8;
 const double flowConstant = 0.0037;
 volatile int flowPulse = 0;
+volatile bool flowPulseOccurred = false;
 bool measuringMode = false;
 double coldWaterUsage = 0;
 double warmWaterUsage = 0;
@@ -30,23 +29,25 @@ double currentUsage;
 bool isMeasuring = false;
 bool canPrint = true;
 
-// Thermometer variables
-// OneWire onewire(A1);
-// DallasTemperature temperatureSensor(&onewire);
-unsigned long lastTemperaturePrintTime = 0; 
+// Memory variables
 unsigned long lastMemoryPrintTime = 0; 
-const unsigned long memoryPrintInterval = 30 * 1000; // Print every 1000 ms (1 second)
+const unsigned long memoryPrintInterval = 30 * 1000; // Print every 30 seconds
+
+void setupWatchdog() {
+    cli();  // Disable interrupts
+    wdt_reset();  // Reset Watchdog Timer
+    MCUSR &= ~(1<<WDRF);  // Clear WDRF in MCUSR
+    WDTCSR |= (1<<WDCE) | (1<<WDE);  // Set WDCE (Watchdog Change Enable)
+    WDTCSR = (1<<WDE) | (1<<WDP3) | (1<<WDP0);  // Set WDE, and 8 seconds delay
+    sei();  // Enable interrupts
+}
 
 void setup() {
-
-    wdt_enable(WDTO_8S);
-
-    // Clear reset flags for next time
-    MCUSR = 0;
+    setupWatchdog();
 
     for (int i = 0; i < slotCount; i++) {
-    pinMode(slotPins[i], OUTPUT); 
-    digitalWrite(slotPins[i], LOW);
+        pinMode(slotPins[i], OUTPUT); 
+        digitalWrite(slotPins[i], LOW);
     }
 
     pinMode(bevvalve, OUTPUT);
@@ -92,18 +93,18 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         
         currentUsage = flowPulse * flowConstant;
 
-          Serial.print("pulse:");
-          Serial.print(flowPulse);
-          Serial.print("\n");
+        Serial.print("pulse:");
+        Serial.print(flowPulse);
+        Serial.print("\n");
 
         if(currentTemp == 1 ){        
-          Serial.print("warm water usage:"); 
-          Serial.print(currentUsage,3);
-          Serial.print("\n");
+            Serial.print("warm water usage:"); 
+            Serial.print(currentUsage,3);
+            Serial.print("\n");
         }else{
-          Serial.print("cold water usage:"); 
-          Serial.print(currentUsage,3);
-          Serial.print("\n");
+            Serial.print("cold water usage:"); 
+            Serial.print(currentUsage,3);
+            Serial.print("\n");
         }
 
         flowPulse = 0;  // Reset the flow pulse count for the next measurement
@@ -111,26 +112,67 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
     }
 }
 
-void checkTemperature() {
-    // temperatureSensor.requestTemperatures();
-    // float tempC = temperatureSensor.getTempCByIndex(0);
-    // if (tempC != DEVICE_DISCONNECTED_C) {
-    //     Serial.println("Temp: " + String(tempC));
-    // } else {
-    //     Serial.println("No Temp");
-    // }
+void checkMemory() {
+    static int lowestMemory = freeMemory();
+    int currentMemory = freeMemory();
+    
+    if (currentMemory < lowestMemory) {
+        lowestMemory = currentMemory;
+        Serial.print("New lowest memory: ");
+        Serial.print(lowestMemory);
+        Serial.println(" bytes");
+    }
+    
+    if (currentMemory < 100) {  // Arbitrary low memory threshold
+        Serial.println("WARNING: Very low memory!");
+    }
 }
 
-volatile unsigned long lastInterruptTime = 0;
+void checkSerialBuffers() {
+    // Check RX buffer
+    if (Serial.available() > 60) {  // Assuming a 64-byte RX buffer
+        Serial.println("WARNING: RX buffer near capacity");
+        while (Serial.available() > 0) {
+            Serial.read();  // Clear the buffer
+        }
+    }
 
-volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
+    // Check TX buffer
+    if (Serial.availableForWrite() < 32) {  // Less than half of TX buffer available
+        Serial.println("WARNING: TX buffer getting full");
+        Serial.flush();  // Wait for all data to be transmitted
+    }
+}
+
+void nonBlockingPrint(const char* message) {
+    static char printBuffer[64];  // Adjust size as needed
+    static int printIndex = 0;
+    
+    if (message != NULL) {
+        // New message to print
+        strncpy(printBuffer, message, sizeof(printBuffer) - 1);
+        printBuffer[sizeof(printBuffer) - 1] = '\0';  // Ensure null-termination
+        printIndex = 0;
+    }
+    
+    while (printIndex < strlen(printBuffer) && Serial.availableForWrite() > 0) {
+        Serial.write(printBuffer[printIndex++]);
+    }
+    
+    if (printIndex >= strlen(printBuffer)) {
+        printBuffer[0] = '\0';  // Clear buffer after fully printed
+        printIndex = 0;
+    }
+}
 
 ISR(PCINT2_vect) {
-    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
+    int currentFlowState = digitalRead(flowmeterPin);
+    static int lastFlowState = LOW;
     if (lastFlowState == LOW && currentFlowState == HIGH) {
         flowPulse++;
+        flowPulseOccurred = true;
     }
-    lastFlowState = currentFlowState; // 更新最後一次的狀態
+    lastFlowState = currentFlowState;
 }
 
 void serialEvent() {
@@ -147,7 +189,6 @@ void serialEvent() {
     }
 }
 
-// New helper functions
 void activateSlot(int slotNumber, unsigned long duration) {
     digitalWrite(slotPins[slotNumber], HIGH);
     Serial.print("Activated slot ");
@@ -202,7 +243,6 @@ void activateRequestedSlots(JsonDocument& doc, unsigned long* slotStartTimes, do
     }
 }
 
-// Simplified execute_actions function
 void execute_actions(const char* actions) {
     Serial.println("start");
     Serial.print("Received actions: ");
@@ -227,8 +267,11 @@ void execute_actions(const char* actions) {
 
     double accumulatedFlow = 0;
     unsigned long lastProgressLog = millis();
+    unsigned long startTime = millis();
+    const unsigned long TIMEOUT = 300000;  // 5 minutes timeout
 
-    while (areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) {
+    while ((areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) &&
+           (millis() - startTime < TIMEOUT)) {
         accumulatedFlow = flowPulse * flowConstant;
 
         if (accumulatedFlow >= desiredFlow && desiredFlow > 0) {
@@ -243,31 +286,43 @@ void execute_actions(const char* actions) {
             }
         }
 
-        if (millis() - lastProgressLog >= 1000) {
-            Serial.print("Progress - Accumulated flow: ");
-            Serial.print(accumulatedFlow);
-            Serial.print(" / Desired flow: ");
-            Serial.println(desiredFlow);
+        if (millis() - lastProgressLog >= 5000) {
+            nonBlockingPrint("Progress - Accumulated flow: ");
+            nonBlockingPrint(String(accumulatedFlow).c_str());
+            nonBlockingPrint(" / Desired flow: ");
+            nonBlockingPrint(String(desiredFlow).c_str());
+            nonBlockingPrint("\n");
             lastProgressLog = millis();
         }
 
+        checkMemory();
+        checkSerialBuffers();
         delay(10);
         wdt_reset();
+
+        if (millis() - startTime >= TIMEOUT) {
+            Serial.println("ERROR: Execution timeout reached");
+            break;
+        }
+    }
+
+    // Ensure everything is turned off
+    pump_water(0, waterTemp);
+    for (int i = 0; i < slotCount; i++) {
+        deactivateSlot(i);
     }
 
     Serial.println("end");
 }
 
 void loop() {
-
     wdt_reset();
 
     if (!canPrint) return;
 
     unsigned long currentMillis = millis();
     if (currentMillis - lastMemoryPrintTime >= memoryPrintInterval) {
-        Serial.print("Free memory: ");
-        Serial.println(freeMemory());
+        checkMemory();
         lastMemoryPrintTime = currentMillis;
     }
 
@@ -324,11 +379,13 @@ void loop() {
             inputLength = 0;  // Reset input length
             stringComplete = false;
         }
-        
     }
 
-    // if (millis() - lastTemperaturePrintTime >= 300000) {
-    //     lastTemperaturePrintTime = millis();
-    //     checkTemperature();
-    // }
+    if (flowPulseOccurred) {
+        // Handle flow pulse if needed
+        flowPulseOccurred = false;
+    }
+
+    nonBlockingPrint(NULL);  // Continue any non-blocking print operations
+    checkSerialBuffers();
 }
