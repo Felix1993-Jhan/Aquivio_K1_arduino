@@ -268,7 +268,7 @@ void execute_actions(const char* actions) {
     double accumulatedFlow = 0;
     unsigned long lastProgressLog = millis();
     unsigned long startTime = millis();
-    const unsigned long TIMEOUT = 300000;  // 5 minutes timeout
+    const unsigned long TIMEOUT = 120 * 1000;  // 2 minutes timeout
 
     while ((areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) && (millis() - startTime < TIMEOUT)) {
         accumulatedFlow = flowPulse * flowConstant;
