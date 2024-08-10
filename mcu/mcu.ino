@@ -270,8 +270,7 @@ void execute_actions(const char* actions) {
     unsigned long startTime = millis();
     const unsigned long TIMEOUT = 300000;  // 5 minutes timeout
 
-    while ((areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) &&
-           (millis() - startTime < TIMEOUT)) {
+    while ((areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) && (millis() - startTime < TIMEOUT)) {
         accumulatedFlow = flowPulse * flowConstant;
 
         if (accumulatedFlow >= desiredFlow && desiredFlow > 0) {
@@ -286,7 +285,7 @@ void execute_actions(const char* actions) {
             }
         }
 
-        if (millis() - lastProgressLog >= 5000) {
+        if (millis() - lastProgressLog >= 1000) {
             nonBlockingPrint("Progress - Accumulated flow: ");
             nonBlockingPrint(String(accumulatedFlow).c_str());
             nonBlockingPrint(" / Desired flow: ");
