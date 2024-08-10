@@ -36,19 +36,16 @@ bool canPrint = true;
 unsigned long lastTemperaturePrintTime = 0; 
 unsigned long lastMemoryPrintTime = 0;
 unsigned long lastmcuAliveTime = 0; 
-const unsigned long memoryPrintInterval = 300 * 1000; // Print every 1000 ms (1 second)
+const unsigned long memoryPrintInterval = 300 * 1000; // Print every 300000 ms (5 minutes)
 const unsigned long mcuAliveInterval = 1 * 1000; // Print every 1000 ms (1 second)
 
 void setup() {
-
     wdt_enable(WDTO_8S);
-
-    // Clear reset flags for next time
     MCUSR = 0;
 
     for (int i = 0; i < slotCount; i++) {
-    pinMode(slotPins[i], OUTPUT); 
-    digitalWrite(slotPins[i], LOW);
+        pinMode(slotPins[i], OUTPUT); 
+        digitalWrite(slotPins[i], LOW);
     }
 
     pinMode(bevvalve, OUTPUT);
@@ -94,9 +91,9 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
         
         currentUsage = flowPulse * flowConstant;
 
-          Serial.print("pulse:");
-          Serial.print(flowPulse);
-          Serial.print("\n");
+        Serial.print("pulse:");
+        Serial.print(flowPulse);
+        Serial.print("\n");
 
         if(currentTemp == 1 ){        
           Serial.print("warm water usage:"); 
@@ -114,25 +111,18 @@ void pump_water(int state, int water_temp, double desiredFlow = -1) {
 }
 
 void checkTemperature() {
-    // temperatureSensor.requestTemperatures();
-    // float tempC = temperatureSensor.getTempCByIndex(0);
-    // if (tempC != DEVICE_DISCONNECTED_C) {
-    //     Serial.println("Temp: " + String(tempC));
-    // } else {
-    //     Serial.println("No Temp");
-    // }
+    // Commented out as in the original code
 }
 
 volatile unsigned long lastInterruptTime = 0;
-
-volatile int lastFlowState = LOW; // 新增一個全局變量來跟踪上一次的狀態
+volatile int lastFlowState = LOW;
 
 ISR(PCINT2_vect) {
-    int currentFlowState = digitalRead(flowmeterPin); // 讀取當前的pin狀態
+    int currentFlowState = digitalRead(flowmeterPin);
     if (lastFlowState == LOW && currentFlowState == HIGH) {
         flowPulse++;
     }
-    lastFlowState = currentFlowState; // 更新最後一次的狀態
+    lastFlowState = currentFlowState;
 }
 
 void serialEvent() {
@@ -150,6 +140,8 @@ void serialEvent() {
 }
 
 void execute_actions(const char* actions) {
+    Serial.println("execute_actions: start");
+
     double durations[slotCount] = {0};
     double desiredFlow = 0;
     int water_temp = 0;
@@ -159,29 +151,36 @@ void execute_actions(const char* actions) {
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, actions);
 
-    // Check for deserialization error
     if (error) {
-        Serial.println("Failed to parse JSON!");
+        Serial.print("execute_actions: Failed to parse JSON: ");
+        Serial.println(error.c_str());
+        Serial.println("end");
         return;
     }
 
+    Serial.println("execute_actions: JSON parsed successfully");
+
     if (doc.containsKey("cold")) {
         desiredFlow = doc["cold"];
+        Serial.print("execute_actions: Cold water flow desired: ");
+        Serial.println(desiredFlow);
         pump_water(1, 0, desiredFlow);
-        currentTemp = 1;
+        currentTemp = 0;
     } else if (doc.containsKey("warm")) {
         desiredFlow = doc["warm"];
+        Serial.print("execute_actions: Warm water flow desired: ");
+        Serial.println(desiredFlow);
         pump_water(1, 1, desiredFlow);
-        currentTemp = 0;
+        currentTemp = 1;
     }
 
     unsigned long slotStartTimes[10] = {0};
     bool isWaterPumpStarted = (desiredFlow > 0);
 
-    // Sort slots in descending order
+    Serial.println("execute_actions: Activating slots");
     int sortedSlots[10];
     for (int i = 0; i < 10; i++) {
-        sortedSlots[i] = 10 - i; // 10, 9, 8, ..., 1
+        sortedSlots[i] = 10 - i;
     }
 
     for (int i = 0; i < 10; i++) {
@@ -193,16 +192,30 @@ void execute_actions(const char* actions) {
             if (!isWaterPumpStarted) {
                 isWaterPumpStarted = true;
             }
+            Serial.print("execute_actions: Activated slot ");
+            Serial.print(sortedSlots[i]);
+            Serial.print(" for ");
+            Serial.print(durations[sortedSlots[i] - 1]);
+            Serial.println(" ms");
             delay(100);
         }
     }
 
     bool isSlotsRunning = true;
     double accumulatedFlow = 0;
+    unsigned long startTime = millis();
+    const unsigned long timeout = 60000; // 1 minute timeout
 
-    while (isSlotsRunning || accumulatedFlow < desiredFlow) {
+    Serial.println("execute_actions: Entering main execution loop");
+    while ((isSlotsRunning || accumulatedFlow < desiredFlow) && (millis() - startTime < timeout)) {
         accumulatedFlow = flowPulse * flowConstant;
+        Serial.print("execute_actions: Current flow: ");
+        Serial.print(accumulatedFlow);
+        Serial.print(" / Desired flow: ");
+        Serial.println(desiredFlow);
+        
         if (accumulatedFlow >= desiredFlow) {
+            Serial.println("execute_actions: Desired flow reached, stopping pump");
             pump_water(0, water_temp);
         }
 
@@ -210,11 +223,24 @@ void execute_actions(const char* actions) {
         isSlotsRunning = false;
 
         for (int i = 0; i < 10; i++) {
-            if (slotStartTimes[i] != 0 && currentTime - slotStartTimes[i] >= (unsigned)durations[i]) {
-                digitalWrite(slotPins[i], LOW);
-                slotStartTimes[i] = 0;
-            } else if (slotStartTimes[i] != 0) {
-                isSlotsRunning = true;
+            if (slotStartTimes[i] != 0) {
+                unsigned long elapsedTime = currentTime - slotStartTimes[i];
+                Serial.print("execute_actions: Slot ");
+                Serial.print(i + 1);
+                Serial.print(" elapsed time: ");
+                Serial.print(elapsedTime);
+                Serial.print(" / ");
+                Serial.print(durations[i]);
+                Serial.println(" ms");
+                
+                if (elapsedTime >= (unsigned long)durations[i]) {
+                    Serial.print("execute_actions: Deactivating slot ");
+                    Serial.println(i + 1);
+                    digitalWrite(slotPins[i], LOW);
+                    slotStartTimes[i] = 0;
+                } else {
+                    isSlotsRunning = true;
+                }
             }
         }
 
@@ -222,11 +248,24 @@ void execute_actions(const char* actions) {
         wdt_reset();
     }
 
+    Serial.println("execute_actions: Exited main execution loop");
+
+    // Ensure all slots are turned off
+    for (int i = 0; i < slotCount; i++) {
+        digitalWrite(slotPins[i], LOW);
+    }
+    Serial.println("execute_actions: All slots turned off");
+
+    if (millis() - startTime >= timeout) {
+        Serial.println("execute_actions: Action execution timed out");
+    } else {
+        Serial.println("execute_actions: All actions completed successfully");
+    }
+
     Serial.println("end");
 }
 
 void loop() {
-
     wdt_reset();
 
     if (!canPrint) return;
@@ -296,9 +335,9 @@ void loop() {
             inputLength = 0;  // Reset input length
             stringComplete = false;
         }
-        
     }
 
+    // Commented out as in the original code
     // if (millis() - lastTemperaturePrintTime >= 300000) {
     //     lastTemperaturePrintTime = millis();
     //     checkTemperature();
