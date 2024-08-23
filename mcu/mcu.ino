@@ -139,7 +139,7 @@ void checkSerialBuffers() {
 
     // Check TX buffer
     if (Serial.availableForWrite() < 32) {  // Less than half of TX buffer available
-        Serial.println("WARNING: TX buffer getting full");
+        // Serial.println("WARNING: TX buffer getting full");
         Serial.flush();  // Wait for all data to be transmitted
     }
 }
