@@ -32,6 +32,10 @@ bool canPrint = true;
 // Memory variables
 unsigned long lastMemoryPrintTime = 0; 
 const unsigned long memoryPrintInterval = 30 * 1000; // Print every 30 seconds
+unsigned long lastmcuAliveTime = 0; 
+const unsigned long memoryPrintInterval = 300 * 1000; // Print every 1000 ms (1 second)
+const unsigned long mcuAliveInterval = 1 * 1000; // Print every 1000 ms (1 second)
+
 
 void setupWatchdog() {
     cli();  // Disable interrupts
@@ -323,6 +327,11 @@ void loop() {
     if (currentMillis - lastMemoryPrintTime >= memoryPrintInterval) {
         checkMemory();
         lastMemoryPrintTime = currentMillis;
+    }
+    
+    if (currentMillis - lastmcuAliveTime >= mcuAliveInterval) {
+        Serial.print("mcuAlive \n");
+        lastmcuAliveTime = currentMillis;
     }
 
     if (stringComplete) {
