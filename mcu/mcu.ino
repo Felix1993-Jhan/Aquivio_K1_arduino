@@ -33,7 +33,6 @@ bool canPrint = true;
 unsigned long lastMemoryPrintTime = 0; 
 const unsigned long memoryPrintInterval = 30 * 1000; // Print every 30 seconds
 unsigned long lastmcuAliveTime = 0; 
-const unsigned long memoryPrintInterval = 300 * 1000; // Print every 1000 ms (1 second)
 const unsigned long mcuAliveInterval = 1 * 1000; // Print every 1000 ms (1 second)
 
 
