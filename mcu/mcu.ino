@@ -3,13 +3,14 @@
 #include "MemoryFree.h"
 
 // General variables
-const int slotPins[] = {8,9,10,11,12,A13,7,6,5,4};
+const int slotPins[] = {8,9,10,11,12,3,7,6,5,4};
 const int slotCount = sizeof(slotPins) / sizeof(slotPins[0]);
 const int bevvalve = 18;
 const int watervalve = 17;
 const int coldvalve = A15;
 const int warmvalve = A14;
-const int waterpump = 19; 
+const int waterpump = A13; 
+
 
 #define MAX_INPUT_LENGTH 200
 char inputString[MAX_INPUT_LENGTH];
