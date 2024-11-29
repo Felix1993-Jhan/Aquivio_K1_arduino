@@ -271,6 +271,7 @@ void execute_actions(const char* actions) {
 
     double accumulatedFlow = 0;
     unsigned long lastProgressLog = millis();
+    unsigned long lastMcuAlive = millis();
     unsigned long startTime = millis();
     const unsigned long TIMEOUT = 120 * 1000;  // 2 minutes timeout
 
@@ -296,6 +297,11 @@ void execute_actions(const char* actions) {
             nonBlockingPrint(String(desiredFlow).c_str());
             nonBlockingPrint("\n");
             lastProgressLog = millis();
+        }
+
+        if (millis() - lastMcuAlive >= 1000) {
+            Serial.print("mcuAlive \n");
+            lastMcuAlive = millis();
         }
 
         checkMemory();
