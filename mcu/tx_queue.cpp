@@ -1,6 +1,43 @@
 #include <Arduino.h>
 #include "tx_queue.h"
 
+/* ⚠ K1 新增,非原 K2 架構:TX 發送佇列(說明見 tx_queue.h 檔頭) */
+
+static uint8_t  q[TX_QUEUE_SIZE];
+static uint16_t q_head = 0;    // 下一個寫入位置(只有 write 改)
+static uint16_t q_tail = 0;    // 下一個送出位置(只有 tx_poll 改);head == tail → 空
+
+TxQueue out;
+
+void tx_poll(void)
+{
+    while (q_head != q_tail && Serial.availableForWrite() > 0) {   // 有資料、Serial 有空位才送,不等待
+        Serial.write(q[q_tail]);
+        q_tail = (q_tail + 1) % TX_QUEUE_SIZE;
+    }
+}
+
+size_t TxQueue::write(uint8_t c)
+{
+    /* 〔步驟 2c 修正〕佇列空、Serial 硬體緩衝有空位 → 直接送,不排隊(時序同舊版 Serial.print)。
+     * 必須「佇列空」才能直送,否則會插隊到佇列裡的舊資料前面,順序就亂了 */
+    if (q_head == q_tail && Serial.availableForWrite() > 0) {
+        Serial.write(c);
+        return 1;
+    }
+
+    uint16_t next = (q_head + 1) % TX_QUEUE_SIZE;
+    while (next == q_tail) {      // 佇列滿:退回等待(同舊版 Serial.print 空等),不丟字串
+        tx_poll();
+    }
+    q[q_head] = c;
+    q_head = next;
+    return 1;
+}
+
+/* 〔步驟 2c〕舊的 nonBlockingPrint 由上方 TX 佇列取代:
+ * 原本 TX 緩衝滿時,新訊息會蓋掉未送完的舊訊息(Progress 可能被截斷);
+ * 改為 out.print 放進佇列,不截斷、順序不變。舊程式保留供對照:
 void nonBlockingPrint(const char* message) {
     static char printBuffer[64];  // Adjust size as needed
     static int printIndex = 0;
@@ -21,3 +58,4 @@ void nonBlockingPrint(const char* message) {
         printIndex = 0;
     }
 }
+*/

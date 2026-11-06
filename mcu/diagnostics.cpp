@@ -4,6 +4,7 @@
 #include "MemoryFree.h"
 
 #include "tick.h"          // K1_DEBUG_TICK、tick_backlog_max
+#include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 /* 〔步驟 2b〕週期改由 1 ms tick 計數(diag_tick_1ms),不再用 millis() 比較。
  * 週期不變(記憶體 30 s、mcuAlive 1 s)。舊變數保留供對照:
@@ -35,30 +36,34 @@ void checkMemory() {
 
     if (currentMemory < lowestMemory) {
         lowestMemory = currentMemory;
-        Serial.print("New lowest memory: ");
-        Serial.print(lowestMemory);
-        Serial.println(" bytes");
+        out.print("New lowest memory: ");
+        out.print(lowestMemory);
+        out.println(" bytes");
     }
 
     if (currentMemory < 100) {  // Arbitrary low memory threshold
-        Serial.println("WARNING: Very low memory!");
+        out.println("WARNING: Very low memory!");
     }
 }
 
 void checkSerialBuffers() {
     // Check RX buffer
+    // 〔步驟 4 前保留〕RX 超過 60 byte 整個清掉;新解析器完成後再移除(架構計畫 9.2 f)
     if (Serial.available() > 60) {  // Assuming a 64-byte RX buffer
-        Serial.println("WARNING: RX buffer near capacity");
+        out.println("WARNING: RX buffer near capacity");
         while (Serial.available() > 0) {
             Serial.read();  // Clear the buffer
         }
     }
 
+    /* 〔步驟 2c〕移除 TX flush:Serial.flush() 會阻塞到 TX 全部送完(64 byte ≈ 67 ms),
+     * 輸出改走 TX 佇列(out / tx_poll)後不需要。舊程式保留供對照:
     // Check TX buffer
     if (Serial.availableForWrite() < 32) {  // Less than half of TX buffer available
         // Serial.println("WARNING: TX buffer getting full");
         Serial.flush();  // Wait for all data to be transmitted
     }
+    */
 }
 
 /* 〔步驟 2b〕每 1 ms 由 tick_main() 呼叫:只計數、設旗標,不輸出
@@ -90,10 +95,10 @@ void diag_poll(void) {
 
     if (alive_due) {
         alive_due = 0;
-        Serial.print("mcuAlive \n");
+        out.print("mcuAlive \n");
 #ifdef K1_DEBUG_TICK
-        Serial.print("tick backlog max: ");   // 除錯版才有,正式版不輸出
-        Serial.println(tick_backlog_max());
+        out.print("tick backlog max: ");   // 除錯版才有,正式版不輸出
+        out.println(tick_backlog_max());
 #endif
     }
 }

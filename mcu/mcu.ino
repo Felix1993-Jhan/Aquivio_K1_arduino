@@ -8,7 +8,8 @@
  *    flowmeter    流量計脈衝計數
  *    dispense     出杯流程(JSON 動作)
  *    uart_cmd     字串分析 + 命令下達
- *    tx_queue     字串回覆
+ *    tx_queue     字串回覆(TX 發送佇列,⚠ K1 新增)
+ *    tick         1 ms 計時(Timer5)與每 1 ms 的工作分派
  *    diagnostics  看門狗、記憶體、mcuAlive、Serial 緩衝檢查
  *    pressure     A1 水壓(已寫好、尚未啟用)
  *    MemoryFree   剩餘 SRAM 計算
@@ -53,7 +54,7 @@ void setup() {
 
     Serial.begin(9600);
     uart_cmd_init();  // 原 memset(inputString, ...)
-    Serial.println("ready");
+    out.println("ready");   // 〔步驟 2c〕走 TX 佇列,loop() 的 tx_poll() 送出
 }
 
 void loop() {
@@ -70,6 +71,7 @@ void loop() {
         flowPulseOccurred = false;
     }
 
-    nonBlockingPrint(NULL);  // Continue any non-blocking print operations
+    // nonBlockingPrint(NULL);  // Continue any non-blocking print operations   〔步驟 2c〕由 tx_poll() 取代
     checkSerialBuffers();
+    tx_poll();        // 〔步驟 2c〕⚠ K1 新增:TX 佇列搬到 Serial,不等待(非原 K2 架構)
 }

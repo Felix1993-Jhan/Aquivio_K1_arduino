@@ -3,6 +3,7 @@
 #include "pins.h"          // slotCount、pin_write、ID_SLOT1
 #include "device.h"        // pump_water
 #include "dispense.h"      // execute_actions
+#include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 #define MAX_INPUT_LENGTH 200
 char inputString[MAX_INPUT_LENGTH];
@@ -40,12 +41,12 @@ void cmd_poll(void) {
         if (inputLength > 0 && inputString[inputLength - 1] == '#') {
             inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
             if (strcmp(inputString, "ping") != 0) {
-                Serial.println(inputString);
+                out.println(inputString);
             }
 
             // Processing commands
             if (strcmp(inputString, "ping") == 0) {
-                Serial.println("pong\n");
+                out.println("pong\n");
             } else if (strcmp(inputString, "startcoldwater") == 0) {
                 pump_water(1, 0);
             } else if (strcmp(inputString, "startwarmwater") == 0) {
