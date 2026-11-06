@@ -2,7 +2,7 @@
 #include "uart_cmd.h"
 #include "pins.h"          // slotCount、pin_write、ID_SLOT1
 #include "device.h"        // pump_water
-#include "dispense.h"      // execute_actions
+#include "dispense.h"      // execute_actions、〔步驟 5〕dispense_busy / abort / stop_slot
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 /* 〔2026-11-06〕命令長度上限 200 → 256:上位機 10 個 slot 全開、每個帶 2 位小數(例 "120000.99")
@@ -76,19 +76,78 @@ static void process_command(char* cmd) {
 }
 
 /* ══════════════════════════════════════════════════════════
+ *  ▌ 區塊 3  出杯中的命令(〔步驟 5〕架構計畫 5.3、9.1 #18)
+ *   出杯不再阻塞 → 出杯中也會收到命令:
+ *     stop       立刻收尾(印 finish / end)
+ *     stopslotN  立刻關該 slot(尚未開的取消不開)〔停止類,上位機若送就執行;需要討論〕
+ *     其他        (ping、startslotN、startcoldwater、新 JSON…)暫存,end 之後依序執行(同舊版)
+ *   出料的配置在下單時就已決定,出杯中只需即時處理停止類命令(使用者 2026-11-06)
+ * ══════════════════════════════════════════════════════════ */
+
+#define DEFER_LENGTH 256
+static char     deferred[DEFER_LENGTH];      // 暫存的命令,以 '#' 分隔(例 "ping#startslot3#")
+static uint16_t deferLen = 0;
+
+static void defer_command(const char* cmd) {
+    uint16_t n = strlen(cmd);
+    if (deferLen + n + 1 > DEFER_LENGTH) return;   // 滿了:丟棄這筆(舊版 RX 超過 60 byte 也會整個清掉)
+    memcpy(&deferred[deferLen], cmd, n);
+    deferLen += n;
+    deferred[deferLen++] = '#';
+}
+
+/* 出杯結束後依序執行暫存的命令;其中若有新的 JSON 又開始出杯,剩下的繼續等下一次 end */
+static void run_deferred(void) {
+    while (deferLen > 0 && !dispense_busy()) {
+        char* sep = (char*)memchr(deferred, '#', deferLen);
+        uint16_t n = (uint16_t)(sep - deferred);
+        *sep = '\0';
+        process_command(deferred);                      // JSON 解析會複製字串,處理完即可移除
+        memmove(deferred, deferred + n + 1, deferLen - n - 1);
+        deferLen -= n + 1;
+    }
+}
+
+static void handle_command(char* cmd) {
+    if (!dispense_busy()) {
+        process_command(cmd);
+        return;
+    }
+
+    if (strcmp(cmd, "stop") == 0) {
+        out.println(cmd);
+        dispense_abort();
+        return;
+    }
+    for (int i = 0; i < slotCount; i++) {
+        char command[15];
+        sprintf(command, "stopslot%d", i + 1);
+        if (strcmp(cmd, command) == 0) {
+            out.println(cmd);
+            dispense_stop_slot(i);
+            return;
+        }
+    }
+    defer_command(cmd);
+}
+
+/* ══════════════════════════════════════════════════════════
  *  ▌ 區塊 1  字串分析(〔步驟 4a〕逐 byte,架構計畫 5.4)
  *   讀到 '#' 就處理一筆(含回覆),再繼續讀下一個 byte → 多筆命令一筆一筆完成
  *   超過 255 字元(MAX_INPUT_LENGTH − 1):丟棄這一筆直到下一個 '#',之後自動恢復
  * ══════════════════════════════════════════════════════════ */
 
 void cmd_poll(void) {
+    run_deferred();                             // 〔步驟 5〕出杯結束後,先執行暫存的命令
+
     while (Serial.available()) {
         char inChar = (char)Serial.read();
 
         if (inChar == '#') {
             if (!inputOverflow) {
                 inputString[inputLength] = '\0';
-                process_command(inputString);   // 出杯 JSON 會在這裡阻塞到 end(步驟 5 前)
+                // process_command(inputString);   // 出杯 JSON 會在這裡阻塞到 end(步驟 5 前)
+                handle_command(inputString);    // 〔步驟 5〕出杯中:停止類立刻處理,其他暫存(區塊 3)
             }
             inputLength = 0;
             inputOverflow = false;

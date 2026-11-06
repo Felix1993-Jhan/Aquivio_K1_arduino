@@ -47,14 +47,16 @@ void checkMemory() {
 }
 
 void checkSerialBuffers() {
+    /* 〔步驟 5〕移除 RX 清空(架構計畫 9.1 #19):出杯不再阻塞,cmd_poll() 每圈都把 RX 讀出,
+     * 不會累積到 60 byte;繼續清空反而會把出杯中送來的命令清掉。連帶不再印 WARNING。舊程式保留供對照:
     // Check RX buffer
-    // 〔步驟 4 前保留〕RX 超過 60 byte 整個清掉;新解析器完成後再移除(架構計畫 9.2 f)
     if (Serial.available() > 60) {  // Assuming a 64-byte RX buffer
         out.println("WARNING: RX buffer near capacity");
         while (Serial.available() > 0) {
             Serial.read();  // Clear the buffer
         }
     }
+    */
 
     /* 〔步驟 2c〕移除 TX flush:Serial.flush() 會阻塞到 TX 全部送完(64 byte ≈ 67 ms),
      * 輸出改走 TX 佇列(out / tx_poll)後不需要。舊程式保留供對照:

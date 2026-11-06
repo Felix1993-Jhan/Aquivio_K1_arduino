@@ -22,6 +22,7 @@
 #include "tx_queue.h"
 #include "diagnostics.h"
 #include "tick.h"          // 〔步驟 2b〕1 ms tick
+#include "dispense.h"      // 〔步驟 5〕dispense_busy
 
 bool canPrint = true;      // 原程式恆為 true
 
@@ -63,8 +64,12 @@ void loop() {
     if (!canPrint) return;
 
     tick_service();   // 〔步驟 2b〕補跑累積的 1 ms tick → 各模組計數、設旗標
+    /* 〔步驟 5〕出杯不再阻塞 loop(),所以改為只在待機時呼叫:出杯中不送 mcuAlive、不做 30 秒記憶體檢查
+     * (同舊版;旗標保留,end 之後送一次。出杯中的記憶體檢查由 dispense 每 10 ms 做)。舊寫法保留供對照:
     diag_poll();      // 原 loop() 開頭:每 30 s 記憶體檢查、每 1 s mcuAlive(看 tick 旗標)
-    cmd_poll();       // 原 loop() 中段:有完整命令就處理
+    */
+    if (!dispense_busy()) diag_poll();
+    cmd_poll();       // 原 loop() 中段:有完整命令就處理;〔步驟 5〕出杯中停止類立刻處理、其他暫存
 
     if (flowPulseOccurred) {
         // Handle flow pulse if needed

@@ -21,6 +21,8 @@ slot 與水量換算(測試用簡化模型,使用者 2026-11-06 指定):
   註:上位機實際 slot 公式為 (volume × ratio ÷ 330) × 60000 × percentage% × waterCalibration,
       ratio 的意義不一定同上;此模型只用來產生合理的測試數值
 
+核對 slot(〔步驟 5〕):開啟順序 = 時間由長到短(相同時編號大的先)、間隔 250 ms;
+  Activated 印出的 duration = 設定(截掉小數);實開時間 = 設定(±250 ms,PC 收字串時間推算)
 核對(由流量停時):
   pulse 數 = ceil(水量 µL / 3300);usage = pulse × 3.3 ml,四捨五入到 0.001 L;
   finish = "stopped by flow pulse threshold"
@@ -75,14 +77,21 @@ def make_orders(n, rng):
     return orders
 
 
+SLOT_INTERVAL_MS = 250        # 〔步驟 5〕開 slot 間隔(原 500)
+
+
+def open_order(o):
+    """〔步驟 5〕韌體開啟順序:時間由長到短,相同時編號大的先(9.1 #26)"""
+    return sorted(o["slots"], key=lambda s: (-int(float(o["slots"][s][2])), -s))
+
+
 def slot_expect(o):
-    """各 slot 預期:印出的 duration(截掉小數)、實際開啟時間 ≈ max(設定, (N−k+1)×500)"""
-    order = sorted(o["slots"], reverse=True)          # 韌體開啟順序:編號大 → 小
-    n = len(order)
+    """各 slot 預期:印出的 duration(截掉小數)、實際開啟時間 = 設定(〔步驟 5〕準時關閉)
+    步驟 5 前(舊版)為 ≈ max(設定, (N−k+1)×500),依編號大 → 小開"""
     out = {}
-    for k, s in enumerate(order, start=1):
+    for s in o["slots"]:
         dur = int(float(o["slots"][s][2]))
-        out[s] = (dur, max(dur, (n - k + 1) * 500))
+        out[s] = (dur, dur)
     return out
 
 
@@ -162,26 +171,34 @@ def main():
                       f"(依 pulse 應為 {usage_str(pulse) if pulse is not None else '?'})  出水 {water_s}")
                 print(f"  {fin}")
 
-                # slot:印出的 duration 與實際開啟時間(PC 收字串時間推算,誤差約 ±250 ms)
-                # 最先開的 slot:它的 Activated 排在回傳 JSON / Received actions 之後,PC 收到時已晚數百 ms
-                # → 改用「第二個 slot 的 Activated 時間 − 500 ms」推算(slot 每 500 ms 開一個,此時佇列已清空)
-                on_times = {}
-                for s in sorted(o["slots"], reverse=True):
-                    on_times[s] = next((t for t, x in seg if x.startswith(f"Activated slot {s} ")), None)
-                order_on = sorted(o["slots"], reverse=True)
-                if len(order_on) >= 2 and on_times[order_on[1]] is not None:
-                    on_times[order_on[0]] = on_times[order_on[1]] - 500
-                for s, (dur, real_exp) in sorted(slot_expect(o).items(), reverse=True):
-                    t_on = on_times[s]
+                # slot 時序:Activated 會排在回傳 JSON / Received actions 之後才送達 PC(長 JSON 可晚 400 ms 以上),
+                # Deactivated 則即時送出 → 改用關閉時間核對:
+                #   第 k 個開的 slot 應在「同一起點 T0 + k × 250 ms + 設定時間」關閉
+                #   取各 slot 的 (關閉時間 − k×250 − 設定) 中位數當 T0,每個 slot 與 T0 的差 ≤ 60 ms 才算準時
+                order_on = open_order(o)
+                seen = [int(x.split()[2]) for _, x in seg if x.startswith("Activated slot ")]
+                if o["slots"]:
+                    o_ok = (seen == order_on)
+                    ok = ok and o_ok
+                    print(f"    開啟順序 {seen}(應 {order_on}){'' if o_ok else '  ← 不符'}")
+                t_req0 = next((t for t, x in seg if x.startswith("Activated slot ")), 0)
+                resid = {}
+                for k, s in enumerate(order_on):
+                    dur = slot_expect(o)[s][0]
+                    t_off = next((t for t, x in seg if x == f"Deactivated slot {s}" and t >= t_req0 - 1000), None)
+                    resid[s] = None if t_off is None else t_off - k * SLOT_INTERVAL_MS - dur
+                vals = sorted(v for v in resid.values() if v is not None)
+                t0 = vals[len(vals) // 2] if vals else 0
+                for k, s in enumerate(order_on):
+                    dur, _ = slot_expect(o)[s]
                     d_txt = next((x.rsplit(":", 1)[1].strip() for _, x in seg
                                   if x.startswith(f"Activated slot {s} ")), None)
-                    t_off = next((t for t, x in seg if x == f"Deactivated slot {s}" and t_on and t >= t_on), None)
-                    real = (t_off - t_on) if t_on and t_off else None
-                    s_ok = (d_txt == str(dur) and real is not None and abs(real - real_exp) <= 250)
+                    r = resid[s]
+                    s_ok = (d_txt == str(dur) and r is not None and (len(order_on) == 1 or abs(r - t0) <= 60))
                     ok = ok and s_ok
-                    print(f"    slot{s:<2} 1:{o['slots'][s][0]:<2} 送 {o['slots'][s][2]:>8} → 印 {d_txt}(應 {dur})"
-                          f"  實開 {real:.0f} ms(應 ≈ {real_exp}){'' if s_ok else '  ← 不符'}"
-                          if real is not None else f"    slot{s} 找不到開關紀錄  ← 不符")
+                    dev = "—" if len(order_on) == 1 or r is None else f"{r - t0:+.0f} ms"
+                    print(f"    第 {k + 1:>2} 個開 slot{s:<2} 1:{o['slots'][s][0]:<2} 送 {o['slots'][s][2]:>8} → 印 {d_txt}(應 {dur})"
+                          f"  關閉時間偏差 {dev}{'' if s_ok else '  ← 不符'}")
                 passed += ok
                 print(f"  → {'PASS' if ok else 'FAIL'}")
                 end = time.perf_counter() + 1.5

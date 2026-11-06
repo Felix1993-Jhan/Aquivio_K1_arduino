@@ -180,14 +180,19 @@ def report_json(r, o, t_send, idx0, end_idx, sent_inject):
     # slot 實開時間:Activated → 之後第一個 Deactivated
     slots = sorted((int(k[4:]), int(float(v))) for k, v in o["payload"].items() if k.startswith("slot"))
     n = len(slots)
-    order = sorted(slots, key=lambda x: -x[0])              # 韌體開啟順序:編號大 → 小
-    print(f"  {'slot':>6} {'設定':>6} {'實開':>6} {'舊版預測':>8}")
-    for k, (num, dur) in enumerate(order, start=1):
+    # 〔步驟 5〕韌體開啟順序:時間由長到短(相同時編號大的先)、間隔 250 ms、準時關閉
+    order = sorted(slots, key=lambda x: (-x[1], -x[0]))
+    old_k = {num: k for k, (num, _) in enumerate(sorted(slots, key=lambda x: -x[0]), start=1)}
+    print(f"  {'slot':>6} {'設定':>6} {'實開':>6} {'新版應':>6} {'舊版會開':>8}")
+    for num, dur in order:
         t_on = next((t for t, s in seg if s.startswith(f"Activated slot {num} ")), None)
         t_off = next((t for t, s in seg if s.strip() == f"Deactivated slot {num}" and t_on and t >= t_on), None)
-        predict = max(dur, (n - k + 1) * 500)
+        old_predict = max(dur, (n - old_k[num] + 1) * 500)   # 舊版:編號大 → 小、各等 500 ms、期間不檢查
         real = f"{t_off - t_on:6.0f}" if t_on and t_off else "     ?"
-        print(f"  {num:>6} {dur:>6} {real} {predict:>8}")
+        print(f"  {num:>6} {dur:>6} {real} {dur:>6} {old_predict:>8}")
+    seen = [int(s.split()[2]) for _, s in seg if s.startswith("Activated slot ")]
+    if slots:
+        print(f"  開啟順序 {seen}(應 {[num for num, _ in order]})")
 
     alive_in = sum(1 for _, s in seg if s.strip() == "mcuAlive")
     print(f"  出杯中 mcuAlive:{alive_in} 次(預期 0)")

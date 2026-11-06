@@ -1,13 +1,11 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <avr/wdt.h>
 #include "dispense.h"
-#include "pins.h"          // slotCount
+#include "pins.h"          // slotCount、pin_write、ID_SLOT1
 #include "device.h"        // pump_water、activateSlot、deactivateSlot
 #include "flowmeter.h"     // flow_get、FLOW_UL_PER_PULSE
-#include "diagnostics.h"   // checkMemory、checkSerialBuffers
-#include "tx_queue.h"      // 〔步驟 2c〕out、tx_poll;〔步驟 4b〕print_liters_ul
-#include "tick.h"          // tick_service(步驟 2b 過渡)
+#include "diagnostics.h"   // checkMemory
+#include "tx_queue.h"      // out、print_liters_ul
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  〔步驟 2d〕出杯邏輯對齊 old/mcu31v2/mcu31v2.ino(老闆電腦上的版本,目前已知最新)
@@ -15,16 +13,21 @@
  *    - 修正問題 ②:停水後 desired = 0、dispenseStopped = true,slot 結束後不再卡住
  *    - 輸出 "Stopping water pump (volume & time satisfied)..."、"finish: ..."
  *    - cold / warm:〔H4〕字串、數字都接受(mcu31v2 只讀字串,數字會讀成 0)
- *  〔步驟 4b〕解析層(pour_parse)與執行層(pour_run)分開;內部全部整數、不用 String:
+ *  〔步驟 4b〕解析層(pour_parse)與執行層分開;內部全部整數、不用 String:
  *    - 水量一律 µL(目標量、累計量 = pulse × FLOW_UL_PER_PULSE)、時間一律 ms
- *    - slot 時間 32-bit 比較(舊版 (unsigned) 在 AVR 為 16-bit,> 65.5 秒會在錯誤時間關閉,架構計畫 5.1)
+ *    - slot 時間 32-bit(舊版 (unsigned) 在 AVR 為 16-bit,> 65.5 秒會在錯誤時間關閉,架構計畫 5.1)
  *    - 輸出換成公升小數、位數同舊版(標準四捨五入,剛好 .5 時可能與舊版浮點差 1 個最小位)
- *  保留本專案的修正:TIMEOUT 120000UL、TX 佇列(out)、過渡用 tick_service / tx_poll
- *  被取代的版本(2d 浮點版、3fe056c 版)以註解保留在檔尾
+ *  〔步驟 5〕執行層改為 1 ms tick 狀態機(dispense_tick_1ms),不再阻塞 loop():
+ *    - 不再使用 delay(500) / delay(10) / millis();時間全部由 tick 計數(slot 倒數同 K2 Counter1ms)
+ *    - slot 依設定時間由長到短開(相同時編號大的先),間隔 250 ms(9.1 #26)
+ *    - STARTING(開 slot 期間)也每 1 ms 檢查 slot 時間與到量(9.2 b)
+ *    - 120 秒逾時、Progress 仍從 slot 全開完起算(同舊版 startTime)
+ *    - 輸出字串與順序同舊版
+ *  被取代的版本(4b 阻塞版、2d 浮點版、3fe056c 版)以註解保留在檔尾
  * ═══════════════════════════════════════════════════════════════════════ */
 
 // -------------------- Min-Time guard (for cold/warm) --------------------
-static unsigned long dispenseStartMs = 0;    // 本次出水開始時間
+// 〔步驟 5〕時間點改用 water_ms(開水後經過 ms,+1 避免 0 被當成「未發生」),原為 millis()
 static unsigned long minTimeMs = 0;          // 應需時間(毫秒);0=不啟用
 static bool timeGuardEnabled = false;        // 是否啟用時間下限
 static bool stoppedByFlow = false;           // 這次是否由 flow 停
@@ -36,16 +39,6 @@ static bool volumeReachedOnce = false;
 static bool timeReachedOnce = false;
 static unsigned long volumeReachedMs = 0;
 static unsigned long timeReachedMs = 0;
-
-static bool areAnySlotsActive(const unsigned long* slotStartTimes, const uint32_t* durations) {
-    unsigned long now = millis();
-    for (int i = 0; i < slotCount; i++) {
-        if (slotStartTimes[i] != 0 && now - slotStartTimes[i] < durations[i]) {   // 〔步驟 4b〕32-bit 比較
-            return true;
-        }
-    }
-    return false;
-}
 
 /* ══════════════════════════════════════════════════════════
  *  ▌ 解析層:JSON → pour_req_t(〔步驟 4b〕)
@@ -145,12 +138,73 @@ static bool pour_parse(const char* actions, pour_req_t* r) {
 }
 
 /* ══════════════════════════════════════════════════════════
- *  ▌ 執行層:只看 pour_req_t(流程同 2d / mcu31v2,數值改整數)
+ *  ▌ 執行層:1 ms tick 狀態機(〔步驟 5〕)
  * ══════════════════════════════════════════════════════════ */
 
-static void pour_run(const pour_req_t* r) {
-    uint32_t desired_ul = 0;                       // 目標水量(µL)
-    int waterTemp = 0;
+#define SLOT_OPEN_INTERVAL_MS  250       // 開 slot 間隔(原 delay(500),9.1 #26)
+#define POUR_TIMEOUT_MS        120000UL  // 同舊版 TIMEOUT(已修正 16-bit 溢位),從 slot 全開完起算
+#define PROGRESS_INTERVAL_MS   1000      // Progress 每秒一次(從 slot 全開完起算,同舊版)
+#define MEMCHECK_INTERVAL_MS   10        // 原出杯迴圈每圈(delay(10))呼叫一次 checkMemory
+
+enum { DS_IDLE, DS_STARTING, DS_RUNNING };
+
+static uint8_t  ds_state = DS_IDLE;
+static pour_req_t ds_req;                        // 本杯動作(pour_parse 的輸出)
+static uint32_t desired_ul = 0;                  // 目標水量(µL);停水後設 0(防重入,同舊版)
+static int      waterTemp = 0;
+static uint32_t accumulated_ul = 0;              // 已出水量(µL)
+
+static uint32_t slot_left[SLOT_COUNT];           // 各 slot 剩餘開啟時間(ms),每 tick 減 1(同 K2 Counter1ms)
+static uint16_t slot_on = 0;                     // bit i = slot(i+1) 開著
+static uint16_t slot_cancel = 0;                 // bit i = 出杯中收到 stopslot(i+1) 時尚未開 → 不開
+static uint8_t  open_order[SLOT_COUNT];          // 開啟順序(0~9):時間由長到短,相同時編號大的先
+static uint8_t  open_count = 0, open_next = 0;
+static uint16_t open_wait_ms = 0;                // 距上一個 slot 開啟的 ms
+
+static uint32_t water_ms = 0;                    // 開水後經過 ms(原 millis() − dispenseStartMs)
+static uint32_t run_ms = 0;                      // slot 全開完後經過 ms(原 millis() − startTime)
+static uint16_t progress_ms = 0;
+static uint8_t  memcheck_ms = 0;
+
+static void open_slot(uint8_t i) {
+    slot_left[i] = ds_req.slot_ms[i];
+    slot_on |= (uint16_t)(1u << i);
+    activateSlot(i, slot_left[i]);
+}
+
+/* STARTING:開下一個 slot(跳過出杯中被 stopslotN 取消的);全部開完 → RUNNING */
+static void open_next_slot(void) {
+    while (open_next < open_count && (slot_cancel & (1u << open_order[open_next]))) open_next++;
+    if (open_next < open_count) open_slot(open_order[open_next++]);
+}
+
+static void pour_finish(void) {
+    // 保險關
+    pump_water(0, waterTemp);
+    for (int i = 0; i < slotCount; i++) deactivateSlot(i);
+    slot_on = 0;
+
+    // finish 回報
+    if (dispenseStopped) {
+        if (stoppedByTime) {
+            out.println("finish: stopped by minimum time constraint");
+        } else if (stoppedByFlow) {
+            out.println("finish: stopped by flow pulse threshold");
+        } else {
+            out.println("finish: stopped by (volume & time) unspecified");
+        }
+    } else {
+        out.println("finish: stopped by system timeout or external stop");
+    }
+
+    out.println("end");
+    ds_state = DS_IDLE;
+}
+
+static void pour_start(const pour_req_t* r) {
+    ds_req = *r;
+    desired_ul = 0;
+    waterTemp = 0;
 
     // -------------------- Water(原 handleWaterFlow)--------------------
     // reset flags
@@ -164,6 +218,199 @@ static void pour_run(const pour_req_t* r) {
     volumeReachedMs    = 0;
     timeReachedMs      = 0;
 
+    if (r->water == WATER_COLD) {
+        desired_ul = r->desired_ul;
+        pump_water(1, 0);
+        waterTemp = 0;
+        out.print("Cold water flow requested: ");
+    } else if (r->water == WATER_WARM) {
+        desired_ul = r->desired_ul;
+        pump_water(1, 1);
+        waterTemp = 1;
+        out.print("Warm water flow requested: ");
+    } else {
+        out.println("No water flow requested");
+    }
+
+    if (r->water != WATER_NONE) {
+        minTimeMs = r->min_time_ms;
+        timeGuardEnabled = (minTimeMs > 0);
+        print_liters_ul(desired_ul, 2);            // 同舊版 println(desiredFlow):公升 2 位
+        out.println();
+    }
+    water_ms = 0;                                  // 原 dispenseStartMs = millis()
+
+    // -------------------- Slots(原 activateRequestedSlots)--------------------
+    // 開啟順序:時間由長到短(插入排序,嚴格 < 才往前 → 時間相同時保留編號大的在前)
+    open_count = 0;
+    for (int i = slotCount - 1; i >= 0; i--) {
+        if (!(r->slot_mask & (1u << i))) continue;
+        uint8_t k = open_count++;
+        while (k > 0 && r->slot_ms[open_order[k - 1]] < r->slot_ms[i]) {
+            open_order[k] = open_order[k - 1];
+            k--;
+        }
+        open_order[k] = (uint8_t)i;
+    }
+    open_next = 0;
+    slot_on = 0;
+    slot_cancel = 0;
+    open_wait_ms = 0;
+    run_ms = 0;
+    progress_ms = 0;
+    memcheck_ms = 0;
+    accumulated_ul = 0;
+
+    ds_state = DS_STARTING;
+    open_next_slot();                              // 第一個 slot 立刻開(同舊版)
+    if (open_next >= open_count) ds_state = DS_RUNNING;
+}
+
+void dispense_tick_1ms(void) {
+    if (ds_state == DS_IDLE) return;
+
+    water_ms++;
+
+    // Timeout 防護(RUNNING;同舊版迴圈開頭先檢查)
+    if (ds_state == DS_RUNNING && ++run_ms >= POUR_TIMEOUT_MS) {
+        out.println("ERROR: Execution timeout reached");
+        pour_finish();
+        return;
+    }
+
+    accumulated_ul = flow_get() * FLOW_UL_PER_PULSE;   // 〔步驟 3〕原子讀取;〔步驟 4b〕整數 µL
+
+    // 條件評估(STARTING / RUNNING 皆檢查)
+    bool reachVolume = (desired_ul > 0) && (accumulated_ul >= desired_ul);   // 同單位(µL)直接比
+    if (reachVolume && !volumeReachedOnce) { volumeReachedOnce = true; volumeReachedMs = water_ms; }
+
+    bool reachTime = (!timeGuardEnabled) || (water_ms >= minTimeMs);
+    if (reachTime && !timeReachedOnce) { timeReachedOnce = true; timeReachedMs = water_ms; }
+
+    // 正常停水條件:同時成立(到量 AND 時間)
+    if (!dispenseStopped && reachVolume && reachTime) {
+        if (timeGuardEnabled) {
+            // 先到量後等時間 → by time;先時間後到量 → by flow
+            if (volumeReachedMs > 0 && timeReachedMs > 0) {
+                stoppedByTime = (volumeReachedMs < timeReachedMs);
+                stoppedByFlow = (timeReachedMs <= volumeReachedMs);
+            } else if (volumeReachedMs > 0) {
+                stoppedByFlow = true;
+            } else {
+                stoppedByFlow = true;
+            }
+        } else {
+            stoppedByFlow = true;
+        }
+
+        out.print("Stopping water pump (volume & time satisfied). ");
+        if (timeGuardEnabled) { out.print("min time = "); out.print(minTimeMs); out.print(" ms. "); }
+        out.println();
+
+        pump_water(0, waterTemp);
+        desired_ul = 0;        // 防重入
+        dispenseStopped = true;
+    }
+
+    // slot 倒數(同 K2 timer1_SET_Count:每 ms 減 1,到 0 就關)
+    for (int i = 0; i < slotCount; i++) {
+        if (!(slot_on & (1u << i))) continue;
+        if (slot_left[i] > 0) slot_left[i]--;
+        if (slot_left[i] == 0) {
+            deactivateSlot(i);
+            slot_on &= (uint16_t)~(1u << i);
+        }
+    }
+
+    // STARTING:每 250 ms 開下一個 slot(在倒數之後開 → 新開的 slot 從下一個 tick 起算)
+    if (ds_state == DS_STARTING) {
+        if (++open_wait_ms >= SLOT_OPEN_INTERVAL_MS) {
+            open_wait_ms = 0;
+            open_next_slot();
+        }
+        if (open_next >= open_count) ds_state = DS_RUNNING;   // 之後才開始算逾時與 Progress(同舊版)
+    } else {
+        // 進度輸出(公升 2 位,格式同舊版)
+        if (++progress_ms >= PROGRESS_INTERVAL_MS) {
+            progress_ms = 0;
+            out.print("Progress - Accumulated flow: ");
+            print_liters_ul(accumulated_ul, 2);
+            out.print(" / Desired flow: ");
+            print_liters_ul(desired_ul, 2);
+            out.print("\n");
+        }
+
+        // 判斷是否要繼續:任何 slot 在跑,或出水尚未同時滿足(到量 AND 時間)
+        bool needMoreWater =
+            (slot_on != 0) ||
+            (
+                (desired_ul > 0 && accumulated_ul < desired_ul) ||
+                (timeGuardEnabled && (water_ms < minTimeMs))
+            );
+
+        if (!needMoreWater) {  // 條件滿足 → 收尾
+            pour_finish();
+            return;
+        }
+    }
+
+    if (++memcheck_ms >= MEMCHECK_INTERVAL_MS) {
+        memcheck_ms = 0;
+        checkMemory();
+    }
+}
+
+bool dispense_busy(void) {
+    return ds_state != DS_IDLE;
+}
+
+void dispense_abort(void) {
+    if (ds_state != DS_IDLE) pour_finish();   // finish: stopped by system timeout or external stop(若水還沒停)
+}
+
+void dispense_stop_slot(int slotNumber) {
+    if (ds_state == DS_IDLE || slotNumber < 0 || slotNumber >= slotCount) return;
+    uint16_t bit = (uint16_t)(1u << slotNumber);
+    if (slot_on & bit) {
+        pin_write(ID_SLOT1 + slotNumber, 0);  // 同待機時的 stopslotN:只關腳位,不印 Deactivated
+        slot_on &= (uint16_t)~bit;
+    } else {
+        slot_cancel |= bit;                    // 尚未開 → 取消,不開
+    }
+}
+
+// -------------------- Main executor --------------------
+void execute_actions(const char* actions) {
+    out.println("start");
+    out.print("Received actions: ");
+    out.println(actions);
+
+    pour_req_t req;
+    if (!pour_parse(actions, &req)) return;   // 解析失敗:已印 "Failed to parse JSON: ...",不送 end(同舊版)
+    pour_start(&req);                         // 〔步驟 5〕開始後立刻返回,之後由 dispense_tick_1ms() 推進
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  〔步驟 5〕以下為被取代的 4b / H4 阻塞版 pour_run,保留供對照。
+ *  換掉原因:出杯期間阻塞 loop()(收不到 stop、slot 開啟期間不檢查);改為 1 ms tick 狀態機。
+ *  (原函式內的區塊註解改寫為 // 以免與外層註解衝突)
+ * ═══════════════════════════════════════════════════════════════════════
+static bool areAnySlotsActive(const unsigned long* slotStartTimes, const uint32_t* durations) {
+    unsigned long now = millis();
+    for (int i = 0; i < slotCount; i++) {
+        if (slotStartTimes[i] != 0 && now - slotStartTimes[i] < durations[i]) {   // 〔步驟 4b〕32-bit 比較
+            return true;
+        }
+    }
+    return false;
+}
+
+static void pour_run(const pour_req_t* r) {
+    uint32_t desired_ul = 0;                       // 目標水量(µL)
+    int waterTemp = 0;
+
+    // -------------------- Water(原 handleWaterFlow)--------------------
+    // reset flags(同上)
     if (r->water == WATER_COLD) {
         desired_ul = r->desired_ul;
         pump_water(1, 0);
@@ -195,8 +442,8 @@ static void pour_run(const pour_req_t* r) {
             durations[i-1] = r->slot_ms[i-1];
             slotStartTimes[i-1] = millis();
             activateSlot(i-1, durations[i-1]);
-            /* 〔步驟 2c 過渡〕delay(500) 改成等 500 ms 的迴圈,期間照常送 TX、推進 tick;
-             * 等待期間仍不檢查水量 / slot(同舊版)。步驟 5 改狀態機後移除 */
+            // 〔步驟 2c 過渡〕delay(500) 改成等 500 ms 的迴圈,期間照常送 TX、推進 tick;
+            // 等待期間仍不檢查水量 / slot(同舊版)。步驟 5 改狀態機後移除
             uint16_t t0 = tick_get();
             while ((uint16_t)(tick_get() - t0) < 500) {
                 tick_service();
@@ -209,58 +456,34 @@ static void pour_run(const pour_req_t* r) {
     uint32_t accumulated_ul = 0;                   // 〔步驟 4b〕原 double accumulatedFlow(公升)
     unsigned long lastProgressLog = millis();
     unsigned long startTime = millis();
-    /* 〔修正 2026-11-06〕120 * 1000 以 AVR 16-bit int 計算會溢位 → 0xFFFFD4C0 ms ≈ 49.7 天,
-     * 2 分鐘逾時從未生效(mcu31v2 同樣有此問題)。改為 120000UL,真正 120 秒逾時。舊寫法保留供對照:
-    const unsigned long TIMEOUT = 120 * 1000; // 2 min safety
-    */
+    // 〔修正 2026-11-06〕120 * 1000 以 AVR 16-bit int 計算會溢位 → 0xFFFFD4C0 ms ≈ 49.7 天,
+    // 2 分鐘逾時從未生效(mcu31v2 同樣有此問題)。改為 120000UL,真正 120 秒逾時。舊寫法:
+    // const unsigned long TIMEOUT = 120 * 1000; // 2 min safety
     const unsigned long TIMEOUT = 120000UL;  // 2 min safety
 
-    // 以 for(;;) 執行,並在迴圈內決定是否繼續或收尾,避免邊界跳出
     for (;;) {
-        // Timeout 防護
         if (millis() - startTime >= TIMEOUT) {
             out.println("ERROR: Execution timeout reached");
             break;
         }
 
-        accumulated_ul = flow_get() * FLOW_UL_PER_PULSE;   // 〔步驟 3〕原子讀取;〔步驟 4b〕整數 µL
-
-        // 條件評估
+        accumulated_ul = flow_get() * FLOW_UL_PER_PULSE;
         bool anySlotActive = areAnySlotsActive(slotStartTimes, durations);
 
-        bool reachVolume = (desired_ul > 0) && (accumulated_ul >= desired_ul);   // 同單位(µL)直接比
+        bool reachVolume = (desired_ul > 0) && (accumulated_ul >= desired_ul);
         if (reachVolume && !volumeReachedOnce) { volumeReachedOnce = true; volumeReachedMs = millis(); }
 
         unsigned long elapsed = millis() - dispenseStartMs;
         bool reachTime = (!timeGuardEnabled) || (elapsed >= minTimeMs);
         if (reachTime && !timeReachedOnce) { timeReachedOnce = true; timeReachedMs = millis(); }
 
-        // 正常停水條件:同時成立(到量 AND 時間)
         if (!dispenseStopped && reachVolume && reachTime) {
-            if (timeGuardEnabled) {
-                // 先到量後等時間 → by time;先時間後到量 → by flow
-                if (volumeReachedMs > 0 && timeReachedMs > 0) {
-                    stoppedByTime = (volumeReachedMs < timeReachedMs);
-                    stoppedByFlow = (timeReachedMs <= volumeReachedMs);
-                } else if (volumeReachedMs > 0) {
-                    stoppedByFlow = true;
-                } else {
-                    stoppedByFlow = true;
-                }
-            } else {
-                stoppedByFlow = true;
-            }
-
-            out.print("Stopping water pump (volume & time satisfied). ");
-            if (timeGuardEnabled) { out.print("min time = "); out.print(minTimeMs); out.print(" ms. "); }
-            out.println();
-
+            (stoppedByTime / stoppedByFlow 判斷、Stopping water pump 輸出,同上)
             pump_water(0, waterTemp);
             desired_ul = 0;        // 防重入
             dispenseStopped = true;
         }
 
-        // slot 倒數(〔步驟 4b〕32-bit 比較)
         for (int i = 0; i < slotCount; i++) {
             if (slotStartTimes[i] != 0 && millis() - slotStartTimes[i] >= durations[i]) {
                 deactivateSlot(i);
@@ -268,13 +491,8 @@ static void pour_run(const pour_req_t* r) {
             }
         }
 
-        // 進度輸出(〔步驟 4b〕String(x) 改為 print_liters_ul,公升 2 位,格式同舊版)
         if (millis() - lastProgressLog >= 1000) {
-            out.print("Progress - Accumulated flow: ");
-            print_liters_ul(accumulated_ul, 2);
-            out.print(" / Desired flow: ");
-            print_liters_ul(desired_ul, 2);
-            out.print("\n");
+            (Progress 輸出,同上)
             lastProgressLog = millis();
         }
 
@@ -282,10 +500,9 @@ static void pour_run(const pour_req_t* r) {
         checkSerialBuffers();
         delay(10);
         wdt_reset();
-        tick_service();   // 〔步驟 2b 過渡〕出杯阻塞期間仍推進 tick,避免累積超過 16-bit;步驟 5 改狀態機後移除
-        tx_poll();        // 〔步驟 2c 過渡〕出杯阻塞期間仍送出 TX 佇列;步驟 5 改狀態機後移除
+        tick_service();   // 〔步驟 2b 過渡〕
+        tx_poll();        // 〔步驟 2c 過渡〕
 
-        // 判斷是否要繼續:任何 slot 在跑,或出水尚未同時滿足(到量 AND 時間)
         bool needMoreWater =
             anySlotActive ||
             (
@@ -293,39 +510,19 @@ static void pour_run(const pour_req_t* r) {
                 (timeGuardEnabled && (elapsed < minTimeMs))
             );
 
-        if (!needMoreWater) break;  // 條件滿足 → 收尾
+        if (!needMoreWater) break;
     }
 
-    // 保險關
-    pump_water(0, waterTemp);
-    for (int i = 0; i < slotCount; i++) deactivateSlot(i);
-
-    // finish 回報
-    if (dispenseStopped) {
-        if (stoppedByTime) {
-            out.println("finish: stopped by minimum time constraint");
-        } else if (stoppedByFlow) {
-            out.println("finish: stopped by flow pulse threshold");
-        } else {
-            out.println("finish: stopped by (volume & time) unspecified");
-        }
-    } else {
-        out.println("finish: stopped by system timeout or external stop");
-    }
-
-    out.println("end");
+    (保險關、finish 回報、end,同上 pour_finish)
 }
 
-// -------------------- Main executor --------------------
 void execute_actions(const char* actions) {
-    out.println("start");
-    out.print("Received actions: ");
-    out.println(actions);
-
+    (start / Received actions 輸出,同上)
     pour_req_t req;
-    if (!pour_parse(actions, &req)) return;   // 解析失敗:已印 "Failed to parse JSON: ...",不送 end(同舊版)
+    if (!pour_parse(actions, &req)) return;
     pour_run(&req);
 }
+*/
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  〔步驟 4b〕以下為被取代的 2d 版本(浮點 / String),保留供對照。
