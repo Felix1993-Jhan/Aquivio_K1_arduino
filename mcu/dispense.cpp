@@ -14,7 +14,7 @@
  *    - 支援 JSON 的 "time"(毫秒):最短出水時間,須「到量 AND 時間到」才停水
  *    - 修正問題 ②:停水後 desired = 0、dispenseStopped = true,slot 結束後不再卡住
  *    - 輸出 "Stopping water pump (volume & time satisfied)..."、"finish: ..."
- *    - cold / warm 只讀字串(同 mcu31v2;上位機訂單送字串,數字會讀成 0)
+ *    - cold / warm:〔H4〕字串、數字都接受(mcu31v2 只讀字串,數字會讀成 0)
  *  〔步驟 4b〕解析層(pour_parse)與執行層(pour_run)分開;內部全部整數、不用 String:
  *    - 水量一律 µL(目標量、累計量 = pulse × FLOW_UL_PER_PULSE)、時間一律 ms
  *    - slot 時間 32-bit 比較(舊版 (unsigned) 在 AVR 為 16-bit,> 65.5 秒會在錯誤時間關閉,架構計畫 5.1)
@@ -74,6 +74,21 @@ static uint32_t parse_fixed(const char* s, uint8_t decimals) {
     return v;
 }
 
+/* 〔H4〕水量(公升)→ µL,字串與數字都接受:
+ *   字串(上位機訂單 routes.cjs,"0.30"):parse_fixed 直接轉整數,不經過浮點
+ *   數字(管理介面「100ml cold / warm」按鈕 main.cjs,{"cold":0.1}):ArduinoJson 解析時已存成浮點,
+ *     只在這裡從浮點換一次整數(×1,000,000、四捨五入),之後全部整數
+ * mcu31v2 只讀字串,數字會變 0 → 該按鈕幾乎不出水;此處改為兩者都接受(行為差異檔第 11 節) */
+static uint32_t json_liters_to_ul(JsonVariantConst v) {
+    const char* s = v.as<const char*>();
+    if (s != NULL) return parse_fixed(s, 6);
+
+    float f = v.as<float>();                    // 不是數字(null 等)→ 0
+    if (!(f > 0.0f)) return 0;                  // 負數、0 → 0(同舊版:視為不看流量)
+    if (f >= 4294.0f) return 4294000000UL;      // uint32 上限(約 4294 L),避免轉型溢位
+    return (uint32_t)(f * 1000000.0f + 0.5f);
+}
+
 /* slot 毫秒:上位機送字串("2181.82"),也接受數字;小數截掉(同舊版 (unsigned)durations 的截斷) */
 static uint32_t json_ms(JsonVariantConst v) {
     const char* s = v.as<const char*>();
@@ -82,6 +97,8 @@ static uint32_t json_ms(JsonVariantConst v) {
 }
 
 static bool pour_parse(const char* actions, pour_req_t* r) {
+    /* 編譯警告 StaticJsonDocument deprecated:7.1.0 中它就是 JsonDocument(200 不限制大小),行為相同,
+     * 使用者 2026-11-06 決定先不改;日後升級 ArduinoJson 大版本時改為 JsonDocument doc; */
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, actions);
     if (error) {
@@ -92,13 +109,22 @@ static bool pour_parse(const char* actions, pour_req_t* r) {
 
     memset(r, 0, sizeof(*r));
 
-    // 水路:cold 優先(同舊版);水量只讀字串(同 mcu31v2:數字 → as<const char*>() 為 NULL → 0)
+    // 水路:cold 優先(同舊版)
+    /* 〔H4〕改為字串、數字都接受(json_liters_to_ul)。原寫法只讀字串(同 mcu31v2,數字 → NULL → 0),保留供對照:
     if (doc.containsKey("cold")) {
         r->water = WATER_COLD;
         r->desired_ul = parse_fixed(doc["cold"].as<const char*>(), 6);   // 公升 → µL
     } else if (doc.containsKey("warm")) {
         r->water = WATER_WARM;
         r->desired_ul = parse_fixed(doc["warm"].as<const char*>(), 6);
+    }
+    */
+    if (doc.containsKey("cold")) {
+        r->water = WATER_COLD;
+        r->desired_ul = json_liters_to_ul(doc["cold"]);   // 公升 → µL
+    } else if (doc.containsKey("warm")) {
+        r->water = WATER_WARM;
+        r->desired_ul = json_liters_to_ul(doc["warm"]);
     }
 
     // time:只在有水路時讀(同 mcu31v2:沒有 cold/warm 時 handleWaterFlow 提早 return,不讀 time)

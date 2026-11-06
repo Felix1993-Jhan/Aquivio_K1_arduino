@@ -26,6 +26,12 @@ extern volatile int flowPulse;             // ISR 遞增;pump_water(0) 時歸零
 */
 extern volatile bool flowPulseOccurred;    // 有計到 pulse 時設 1(loop() 清除,原程式即無其他用途)
 
+/* ── 除錯用:模擬流量計(預設關閉,正式版不編入)──
+ * 開啟後 D23(PA1,空腳)輸出方波模擬流量計,以杜邦線接到 A8:
+ *   泵(waterpump)開著時約 6 Hz(83 / 84 ms 交替翻轉),泵關著時維持高準位(同 A8 上拉的靜止狀態)
+ * 開啟方式:取消下一行註解,或 arduino-cli 加 --build-property "compiler.cpp.extra_flags=-DK1_DEBUG_FLOW_GEN" */
+// #define K1_DEBUG_FLOW_GEN
+
 void     flow_init(void);                  // setup():清除計數(〔步驟 3〕不再開 PCINT16)
 void     flow_isr_1ms(void);               // 只在 Timer5 ISR 內呼叫
 uint32_t flow_get(void);                   // 目前累計的 pulse 數(原子讀取)
