@@ -10,8 +10,16 @@
     python -I -X utf8 tools/k1_volume_test.py --port COM28 --orders 10 --seed 5
     python -I -X utf8 tools/k1_volume_test.py --dry-run                 # 只列出訂單
 
-訂單(隨機):cold / warm;水量 250 / 330 / 500 ml(上位機格式字串 "0.25",少數用數字 0.25);
-time:不帶 / 短(到量先到 → 應由流量停)/ 長(比出水時間長 → 應由時間停);0~2 個短 slot
+訂單(隨機):cold / warm;總量 250 / 330 / 500 ml;0~10 個 slot,各隨機 1:32 或 1:10;
+time:不帶 / 短(到量先到 → 應由流量停)/ 長(比出水時間長 → 應由時間停)
+
+slot 與水量換算(測試用簡化模型,使用者 2026-11-06 指定):
+  - 比例 1:N = 料佔總量 1/(N+1)(1:32 → 1/33、1:10 → 1/11)
+  - 蠕動泵 5 ml/s → slot 毫秒 = 料 ml ÷ 5 × 1000(送字串、2 位小數,同上位機 toFixed(2))
+  - 總量包含料(同上位機 routes.cjs translateOrder 會扣掉料):水 = 總量 − Σ 料,
+    送 "cold":"0.xx"(2 位小數,少數用數字)
+  註:上位機實際 slot 公式為 (volume × ratio ÷ 330) × 60000 × percentage% × waterCalibration,
+      ratio 的意義不一定同上;此模型只用來產生合理的測試數值
 
 核對(由流量停時):
   pulse 數 = ceil(水量 µL / 3300);usage = pulse × 3.3 ml,四捨五入到 0.001 L;
@@ -35,26 +43,47 @@ import serial  # noqa: E402
 UL_PER_PULSE = 3300
 GEN_HZ = 1000 / 167           # 韌體 83 / 84 ms 交替翻轉(半週期)→ 週期 167 ms ≈ 5.99 Hz
 VOLUMES_ML = (250, 330, 500)
+RATIOS = (32, 10)             # 1:32、1:10
+PUMP_ML_PER_S = 5.0           # 蠕動泵出料量
 
 
 def make_orders(n, rng):
     orders = []
     for _ in range(n):
         water = rng.choice(["cold", "warm"])
-        ml = rng.choice(VOLUMES_ML)
+        total = rng.choice(VOLUMES_ML)
+        slots = {}                                     # slot 編號 → (比例 N, 料 ml, 送出的字串)
+        for s in sorted(rng.sample(range(1, 11), rng.randint(0, 10))):
+            ratio = rng.choice(RATIOS)
+            syrup = total / (ratio + 1)
+            slots[s] = (ratio, syrup, f"{syrup / PUMP_ML_PER_S * 1000:.2f}")
+        water_ml = total - sum(v[1] for v in slots.values())
+        water_l = round(water_ml / 1000, 2)            # 同上位機 toFixed(2)
         numeric = rng.random() < 0.2
-        payload = {water: ml / 1000 if numeric else f"{ml / 1000:.2f}"}
-        pulses = math.ceil(ml * 1000 / UL_PER_PULSE)
-        vol_ms = pulses / GEN_HZ * 1000            # 到量大約需要的時間
+        payload = {water: water_l if numeric else f"{water_l:.2f}"}
+        pulses = math.ceil(round(water_l * 1_000_000) / UL_PER_PULSE)
+        vol_ms = pulses / GEN_HZ * 1000                # 到量大約需要的時間
         mode = rng.choice(["none", "short", "long"])
         if mode == "short":
             payload["time"] = rng.randrange(1000, 3001, 100)
         elif mode == "long":
             payload["time"] = int(vol_ms + rng.randrange(3000, 6001, 500)) // 100 * 100
-        for s in rng.sample(range(1, 11), rng.randint(0, 2)):
-            payload[f"slot{s}"] = str(rng.randrange(300, 2001, 100))
-        orders.append({"payload": payload, "ml": ml, "mode": mode, "pulses": pulses})
+        for s, (_, _, ms) in slots.items():
+            payload[f"slot{s}"] = ms
+        orders.append({"payload": payload, "total": total, "water_ml": water_ml,
+                       "slots": slots, "mode": mode, "pulses": pulses})
     return orders
+
+
+def slot_expect(o):
+    """各 slot 預期:印出的 duration(截掉小數)、實際開啟時間 ≈ max(設定, (N−k+1)×500)"""
+    order = sorted(o["slots"], reverse=True)          # 韌體開啟順序:編號大 → 小
+    n = len(order)
+    out = {}
+    for k, s in enumerate(order, start=1):
+        dur = int(float(o["slots"][s][2]))
+        out[s] = (dur, max(dur, (n - k + 1) * 500))
+    return out
 
 
 def expect(o):
@@ -81,7 +110,10 @@ def main():
     print(f"seed {args.seed},共 {len(orders)} 筆:")
     for i, o in enumerate(orders, 1):
         p, fin, tol = expect(o)
-        print(f"  {i}. {json.dumps(o['payload'], separators=(',', ':'))}  預期 pulse {p}{'±' + str(tol) if tol else ''}")
+        sl = " ".join(f"s{s}=1:{r}" for s, (r, _, _) in o["slots"].items()) or "無 slot"
+        print(f"  {i}. 總量 {o['total']} ml = 水 {o['water_ml']:.1f} + 料 {o['total'] - o['water_ml']:.1f}({sl})"
+              f"  預期 pulse {p}{'±' + str(tol) if tol else ''}")
+        print(f"     {json.dumps(o['payload'], separators=(',', ':'))}")
     if args.dry_run:
         return
 
@@ -122,13 +154,35 @@ def main():
                 p_exp, fin_exp, tol = expect(o)
                 ok = (pulse is not None and abs(pulse - p_exp) <= tol
                       and usage == usage_str(pulse) and fin == fin_exp)
-                passed += ok
                 water_s = f"{(t_use - t_req) / 1000:.1f} s" if t_req and t_use else "?"
-                print(f"\n── {i}. {cmd}")
+                print(f"\n── {i}. 總量 {o['total']} ml,水 {o['water_ml']:.1f} ml,{len(o['slots'])} 個 slot")
+                print(f"  {cmd}")
                 print(f"  {req}")
                 print(f"  pulse {pulse}(預期 {p_exp}{'±' + str(tol) if tol else ''})  usage {usage}"
                       f"(依 pulse 應為 {usage_str(pulse) if pulse is not None else '?'})  出水 {water_s}")
                 print(f"  {fin}")
+
+                # slot:印出的 duration 與實際開啟時間(PC 收字串時間推算,誤差約 ±250 ms)
+                # 最先開的 slot:它的 Activated 排在回傳 JSON / Received actions 之後,PC 收到時已晚數百 ms
+                # → 改用「第二個 slot 的 Activated 時間 − 500 ms」推算(slot 每 500 ms 開一個,此時佇列已清空)
+                on_times = {}
+                for s in sorted(o["slots"], reverse=True):
+                    on_times[s] = next((t for t, x in seg if x.startswith(f"Activated slot {s} ")), None)
+                order_on = sorted(o["slots"], reverse=True)
+                if len(order_on) >= 2 and on_times[order_on[1]] is not None:
+                    on_times[order_on[0]] = on_times[order_on[1]] - 500
+                for s, (dur, real_exp) in sorted(slot_expect(o).items(), reverse=True):
+                    t_on = on_times[s]
+                    d_txt = next((x.rsplit(":", 1)[1].strip() for _, x in seg
+                                  if x.startswith(f"Activated slot {s} ")), None)
+                    t_off = next((t for t, x in seg if x == f"Deactivated slot {s}" and t_on and t >= t_on), None)
+                    real = (t_off - t_on) if t_on and t_off else None
+                    s_ok = (d_txt == str(dur) and real is not None and abs(real - real_exp) <= 250)
+                    ok = ok and s_ok
+                    print(f"    slot{s:<2} 1:{o['slots'][s][0]:<2} 送 {o['slots'][s][2]:>8} → 印 {d_txt}(應 {dur})"
+                          f"  實開 {real:.0f} ms(應 ≈ {real_exp}){'' if s_ok else '  ← 不符'}"
+                          if real is not None else f"    slot{s} 找不到開關紀錄  ← 不符")
+                passed += ok
                 print(f"  → {'PASS' if ok else 'FAIL'}")
                 end = time.perf_counter() + 1.5
                 while time.perf_counter() < end:
