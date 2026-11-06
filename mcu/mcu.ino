@@ -1,15 +1,21 @@
 #include <ArduinoJson.h>
 #include <avr/wdt.h>
 #include "MemoryFree.h"
+#include "pins.h"   // 〔步驟 1〕GPIO 腳位表與讀寫函式
 
 // General variables
+/* 〔步驟 1〕腳位改由 pins.cpp 的 PinMap[] 統一定義,讀寫改用 pin_write() / FLOW_PIN_READ()
+ * (直接存取暫存器,取代 pinMode / digitalWrite / digitalRead,架構計畫第 7 節)。
+ * slot(i+1) 對應 ID_SLOT1 + i。舊的 Arduino 腳位編號保留供對照:
 const int slotPins[] = {8,9,10,11,12,3,7,6,5,4};
 const int slotCount = sizeof(slotPins) / sizeof(slotPins[0]);
 const int bevvalve = 18;
 const int watervalve = 17;
 const int coldvalve = A15;
 const int warmvalve = A14;
-const int waterpump = A13; 
+const int waterpump = A13;
+*/
+const int slotCount = SLOT_COUNT; 
 
 
 #define MAX_INPUT_LENGTH 200
@@ -19,7 +25,7 @@ boolean stringComplete = false;
 int currentTemp = 0;
 
 // Flowmeter variables
-const int flowmeterPin = A8;
+// const int flowmeterPin = A8;   // 〔步驟 1〕改用 pins.h 的 ID_FLOWMETER / FLOW_PIN_READ()
 const double flowConstant = 0.0037;
 volatile int flowPulse = 0;
 volatile bool flowPulseOccurred = false;
@@ -47,10 +53,13 @@ void setupWatchdog() {
 }
 
 void setup() {
+    pin_init_all();   // 〔步驟 1〕最先執行,縮短開機後腳位 high-Z 的空窗(架構計畫 7.3、7.6)
     setupWatchdog();
 
+    /* 〔步驟 1〕以下腳位初始化改由 pin_init_all() 處理:方向與初始準位相同
+     * (slot / 閥 / 泵 = 輸出 LOW,流量計 = 輸入上拉),並移到 setupWatchdog() 之前。舊程式保留供對照:
     for (int i = 0; i < slotCount; i++) {
-        pinMode(slotPins[i], OUTPUT); 
+        pinMode(slotPins[i], OUTPUT);
         digitalWrite(slotPins[i], LOW);
     }
 
@@ -66,6 +75,7 @@ void setup() {
     digitalWrite(waterpump, LOW);
 
     pinMode(flowmeterPin, INPUT_PULLUP);
+    */
     PCICR |= (1 << PCIE2);   // Enable pin change interrupt for A8 to A15
     PCMSK2 |= (1 << PCINT16);  // Enable pin change interrupt for A8 specifically
 
@@ -75,25 +85,25 @@ void setup() {
 }
 
 void pump_water(int state, int water_temp, double desiredFlow = -1) {
-    digitalWrite(watervalve, state == 1 ? HIGH : LOW);
+    pin_write(ID_WATERVALVE, state == 1);
 
     if (state == 1) {
-        digitalWrite(waterpump, HIGH);
+        pin_write(ID_WATERPUMP, 1);
         if(water_temp == 1) {
-            digitalWrite(warmvalve, HIGH);
-            digitalWrite(coldvalve, LOW);
+            pin_write(ID_WARMVALVE, 1);
+            pin_write(ID_COLDVALVE, 0);
             currentTemp = 1;
         } else {
-            digitalWrite(warmvalve, LOW);
-            digitalWrite(coldvalve, HIGH);
+            pin_write(ID_WARMVALVE, 0);
+            pin_write(ID_COLDVALVE, 1);
             currentTemp = 0;
         }
         measuringMode = true;
-        
+
     } else {
-        digitalWrite(waterpump, LOW);
-        digitalWrite(warmvalve, LOW);
-        digitalWrite(coldvalve, LOW);
+        pin_write(ID_WATERPUMP, 0);
+        pin_write(ID_WARMVALVE, 0);
+        pin_write(ID_COLDVALVE, 0);
         
         currentUsage = flowPulse * flowConstant;
 
@@ -170,7 +180,7 @@ void nonBlockingPrint(const char* message) {
 }
 
 ISR(PCINT2_vect) {
-    int currentFlowState = digitalRead(flowmeterPin);
+    int currentFlowState = FLOW_PIN_READ() ? HIGH : LOW;   // 〔步驟 1〕直讀 PINK,取代 digitalRead
     static int lastFlowState = LOW;
     if (lastFlowState == LOW && currentFlowState == HIGH) {
         flowPulse++;
@@ -194,7 +204,7 @@ void serialEvent() {
 }
 
 void activateSlot(int slotNumber, unsigned long duration) {
-    digitalWrite(slotPins[slotNumber], HIGH);
+    pin_write(ID_SLOT1 + slotNumber, 1);
     Serial.print("Activated slot ");
     Serial.print(slotNumber + 1);
     Serial.print(" for duration: ");
@@ -202,7 +212,7 @@ void activateSlot(int slotNumber, unsigned long duration) {
 }
 
 void deactivateSlot(int slotNumber) {
-    digitalWrite(slotPins[slotNumber], LOW);
+    pin_write(ID_SLOT1 + slotNumber, 0);
     Serial.print("Deactivated slot ");
     Serial.println(slotNumber + 1);
 }
@@ -272,7 +282,11 @@ void execute_actions(const char* actions) {
     double accumulatedFlow = 0;
     unsigned long lastProgressLog = millis();
     unsigned long startTime = millis();
+    /* 〔修正 2026-11-06〕120 * 1000 以 AVR 16-bit int 計算會溢位 → 0xFFFFD4C0 ms ≈ 49.7 天,
+     * 2 分鐘逾時從未生效。改為 120000UL(unsigned long 常數),真正 120 秒逾時。舊寫法保留供對照:
     const unsigned long TIMEOUT = 120 * 1000;  // 2 minutes timeout
+    */
+    const unsigned long TIMEOUT = 120000UL;  // 2 minutes timeout
 
     while ((areAnySlotsActive(slotStartTimes, durations) || accumulatedFlow < desiredFlow) && (millis() - startTime < TIMEOUT)) {
         accumulatedFlow = flowPulse * flowConstant;
@@ -351,7 +365,7 @@ void loop() {
             } else if (strcmp(inputString, "stop") == 0) {
                 pump_water(0, 0);
                 for (int i = 0; i < slotCount; i++) {
-                    digitalWrite(slotPins[i], LOW);
+                    pin_write(ID_SLOT1 + i, 0);
                 }
             } else {
                 boolean slotCommandProcessed = false;
@@ -361,7 +375,7 @@ void loop() {
                     char command[15];
                     sprintf(command, "startslot%d", i + 1);
                     if (strcmp(inputString, command) == 0) {
-                        digitalWrite(slotPins[i], HIGH);
+                        pin_write(ID_SLOT1 + i, 1);
                         slotCommandProcessed = true;
                         break;
                     }
@@ -372,7 +386,7 @@ void loop() {
                     char command[15];
                     sprintf(command, "stopslot%d", i + 1);
                     if (strcmp(inputString, command) == 0) {
-                        digitalWrite(slotPins[i], LOW);
+                        pin_write(ID_SLOT1 + i, 0);
                         slotCommandProcessed = true;
                         break;
                     }
