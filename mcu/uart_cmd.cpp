@@ -5,8 +5,13 @@
 #include "dispense.h"      // execute_actions
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
+/* 〔2026-11-06〕命令長度上限 200 → 256:上位機 10 個 slot 全開、每個帶 2 位小數(例 "120000.99")
+ * 再加 time 時最長約 230 字元,超過舊上限 199 → 整筆被丟棄(舊版 mcu31v2 則永久卡死)。
+ * 改 256 可收 255 字元,涵蓋最壞情況(slot 受 120 秒逾時限制,最多 6 位整數)。舊值保留供對照:
 #define MAX_INPUT_LENGTH 200
-static char inputString[MAX_INPUT_LENGTH];   // 一筆命令(不含 '#'),最多 199 字元 + '\0'
+*/
+#define MAX_INPUT_LENGTH 256
+static char inputString[MAX_INPUT_LENGTH];   // 一筆命令(不含 '#'),最多 255 字元 + '\0'
 static unsigned int inputLength = 0;
 static bool inputOverflow = false;           // 〔步驟 4a〕這一筆超長 → 丟棄到下一個 '#'
 /* 〔步驟 4a〕不再需要「收完一整批」旗標。舊變數保留供對照:
@@ -73,7 +78,7 @@ static void process_command(char* cmd) {
 /* ══════════════════════════════════════════════════════════
  *  ▌ 區塊 1  字串分析(〔步驟 4a〕逐 byte,架構計畫 5.4)
  *   讀到 '#' 就處理一筆(含回覆),再繼續讀下一個 byte → 多筆命令一筆一筆完成
- *   超過 199 字元:丟棄這一筆直到下一個 '#',之後自動恢復
+ *   超過 255 字元(MAX_INPUT_LENGTH − 1):丟棄這一筆直到下一個 '#',之後自動恢復
  * ══════════════════════════════════════════════════════════ */
 
 void cmd_poll(void) {
