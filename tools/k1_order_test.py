@@ -8,9 +8,11 @@
     python -I -X utf8 tools/k1_order_test.py --orders 10 --seed 7
 
 訂單種類(隨機):
-    JSON    1~4 個 slot,每個 0.2~3.0 秒;水路:無 / {"cold":0} / {"warm":0}
-            水量一律 0 = 不看流量(泵跟著 slot 開到結束)。
-            若送 >0 的水量,流量計沒有脈衝時會卡到 120 秒逾時(--water 可指定,預設 0)
+    JSON    格式同上位機 routes.cjs:數值為字串,可帶 "time"(毫秒,最短出水時間)
+            1~4 個 slot,每個 0.2~3.0 秒;水路:無 / cold / warm,約一半帶 time(1~5 秒)
+            另有約 2 成「純水」訂單:只有水 + time、沒有 slot(台幣水量取整 → "0" 的情況)
+            水量一律 "0" = 不看流量。若送 >0 的水量,流量計沒有脈衝時會卡到 120 秒逾時
+            (--water 可指定,預設 0)
     手動    startcoldwater# / startwarmwater# → 隨機 1~10 秒 → stop#
 出杯中穿插(隨機):ping# / stop# / startslotN# / stopslotN#
 安全:插過 startslotN# 的訂單結束後補送 stop#;腳本結束或中斷時一定送 stop#
@@ -48,13 +50,23 @@ def make_orders(n, rng, water_value):
             })
             continue
 
-        slots = sorted(rng.sample(range(1, 11), rng.randint(1, 4)))
+        # 格式同上位機 routes.cjs translateOrder:數值為字串、可帶 "time"(毫秒,最短出水時間)
         payload = {}
+        if rng.random() < 0.2:
+            # 純水訂單(台幣 / 泰銖時水量取 0 位小數 → "0",靠 time 控制出水時間)
+            water = rng.choice(["cold", "warm"])
+            payload[water] = f"{water_value:g}"
+            payload["time"] = rng.randrange(1000, 5001, 100)
+            orders.append({"kind": "json", "payload": payload, "inject": []})
+            continue
+        slots = sorted(rng.sample(range(1, 11), rng.randint(1, 4)))
         water = rng.choice([None, "cold", "warm"])
         if water:
-            payload[water] = water_value
+            payload[water] = f"{water_value:g}"
+            if rng.random() < 0.5:
+                payload["time"] = rng.randrange(1000, 5001, 100)
         for s in slots:
-            payload[f"slot{s}"] = rng.randrange(200, 3001, 100)
+            payload[f"slot{s}"] = str(rng.randrange(200, 3001, 100))
 
         # 出杯中穿插的命令:0~2 個,送出時間 = 出杯開始後隨機 0.3~3 秒
         pool = ["ping", "stop", f"startslot{rng.randint(1, 10)}", f"stopslot{rng.choice(slots)}"]
@@ -155,8 +167,18 @@ def report_json(r, o, t_send, idx0, end_idx, sent_inject):
     else:
         print(f"  送出 → end   {t_end - t_send:.0f} ms")
 
+    # 出水:Cold/Warm water flow requested → 之後第一個 water usage(停水時印)
+    if "time" in o["payload"]:
+        t_w = next((t for t, s in seg if "water flow requested" in s), None)
+        t_u = next((t for t, s in seg if "water usage:" in s and t_w and t >= t_w), None)
+        if t_w and t_u:
+            print(f"  出水 {t_u - t_w:.0f} ms(time = {o['payload']['time']} ms,應 ≥ time)")
+    for t, s in seg:
+        if s.startswith("finish:") or s.startswith("Stopping water pump"):
+            print(f"  {s.strip()}")
+
     # slot 實開時間:Activated → 之後第一個 Deactivated
-    slots = sorted((int(k[4:]), v) for k, v in o["payload"].items() if k.startswith("slot"))
+    slots = sorted((int(k[4:]), int(float(v))) for k, v in o["payload"].items() if k.startswith("slot"))
     n = len(slots)
     order = sorted(slots, key=lambda x: -x[0])              # 韌體開啟順序:編號大 → 小
     print(f"  {'slot':>6} {'設定':>6} {'實開':>6} {'舊版預測':>8}")

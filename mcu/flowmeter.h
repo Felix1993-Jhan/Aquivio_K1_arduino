@@ -8,7 +8,7 @@
  *  步驟 3 會改為 1 ms 輪詢 + debounce、計數改 uint32_t 並加原子讀取。
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern const double flowConstant;          // 每 pulse 的水量(單位未定,見架構計畫 9.3)
+extern const double flowConstant;          // 每 pulse 的水量(公升;上位機 routes.cjs 以公升送水量)
 extern volatile int flowPulse;             // ISR 遞增;pump_water(0) 時歸零
 extern volatile bool flowPulseOccurred;
 

@@ -4,7 +4,10 @@
 
 // Flowmeter variables
 // const int flowmeterPin = A8;   // 〔步驟 1〕改用 pins.h 的 ID_FLOWMETER / FLOW_PIN_READ()
+/* 〔步驟 2d〕對齊 old/mcu31v2:流量常數改為 0.0033(mcu31v2 註解「依實測校正」)。舊值保留供對照:
 const double flowConstant = 0.0037;
+*/
+const double flowConstant = 0.0033;   // L per pulse(依實測校正,同 mcu31v2)
 volatile int flowPulse = 0;
 volatile bool flowPulseOccurred = false;
 
