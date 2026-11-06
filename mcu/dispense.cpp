@@ -4,7 +4,7 @@
 #include "dispense.h"
 #include "pins.h"          // slotCount
 #include "device.h"        // pump_water、activateSlot、deactivateSlot
-#include "flowmeter.h"     // flowPulse、flowConstant
+#include "flowmeter.h"     // flow_get、flowConstant
 #include "diagnostics.h"   // checkMemory、checkSerialBuffers
 #include "tx_queue.h"      // 〔步驟 2c〕out、tx_poll(取代 nonBlockingPrint)
 #include "tick.h"          // tick_service(步驟 2b 過渡)
@@ -142,7 +142,8 @@ void execute_actions(const char* actions) {
             break;
         }
 
-        accumulatedFlow = flowPulse * flowConstant;
+        // accumulatedFlow = flowPulse * flowConstant;   〔步驟 3〕改為原子讀取(舊版 16-bit 非原子,可能讀到撕裂值而提早停水)
+        accumulatedFlow = flow_get() * flowConstant;
 
         // 條件評估
         bool anySlotActive = areAnySlotsActive(slotStartTimes, durations);

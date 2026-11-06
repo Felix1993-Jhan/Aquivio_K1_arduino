@@ -3,6 +3,7 @@
 #include <util/atomic.h>
 #include "tick.h"
 #include "diagnostics.h"   // diag_tick_1ms
+#include "flowmeter.h"     // 〔步驟 3〕flow_isr_1ms
 
 static volatile uint16_t tick_cnt = 0;   // 只有 ISR 寫
 static uint16_t tick_done = 0;           // 只有主迴圈寫
@@ -29,6 +30,7 @@ void tick_init(void)
 ISR(TIMER5_COMPA_vect)
 {
     tick_cnt++;
+    flow_isr_1ms();        // 〔步驟 3〕流量計 1 ms 取樣 + debounce(只讀 PINK,不寫輸出)
 }
 
 uint16_t tick_get(void)
@@ -42,7 +44,7 @@ uint16_t tick_get(void)
 static void tick_main(void)
 {
     diag_tick_1ms();       // 記憶體檢查 / mcuAlive 週期
-    // 步驟 3:流量計(debounce 在 ISR,這裡不需要)
+    // 〔步驟 3〕流量計 debounce 在 ISR(flow_isr_1ms),這裡不需要
     // 步驟 5:dispense_tick_1ms()  出杯狀態機
     // 步驟 6:pressure_tick_1ms()  水壓取樣
 }

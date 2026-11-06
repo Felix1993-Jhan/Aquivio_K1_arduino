@@ -49,7 +49,7 @@ void setup() {
 
     pinMode(flowmeterPin, INPUT_PULLUP);
     */
-    flow_init();      // 原 PCICR / PCMSK2 兩行
+    flow_init();      // 〔步驟 3〕清除流量計數(原 PCICR / PCMSK2 兩行已移除,改由 Timer5 1 ms 取樣)
     tick_init();      // 〔步驟 2b〕Timer5 1 ms tick
 
     Serial.begin(9600);

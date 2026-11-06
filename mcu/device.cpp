@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "device.h"
 #include "pins.h"
-#include "flowmeter.h"     // flowPulse、flowConstant
+#include "flowmeter.h"     // flow_take、flowConstant
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 int currentTemp = 0;
@@ -33,10 +33,19 @@ void pump_water(int state, int water_temp, double desiredFlow) {
         pin_write(ID_WARMVALVE, 0);
         pin_write(ID_COLDVALVE, 0);
 
+        /* 〔步驟 3〕改為 flow_take() 原子讀取並歸零:舊版讀 2 次 flowPulse(計算、輸出)再歸零,
+         * 中間被 ISR 插入時數值會不一致或漏掉 pulse。輸出格式不變。舊程式保留供對照:
         currentUsage = flowPulse * flowConstant;
 
         out.print("pulse:");
         out.print(flowPulse);
+        out.print("\n");
+        */
+        uint32_t pulses = flow_take();
+        currentUsage = pulses * flowConstant;
+
+        out.print("pulse:");
+        out.print(pulses);
         out.print("\n");
 
         if(currentTemp == 1 ){
@@ -49,7 +58,7 @@ void pump_water(int state, int water_temp, double desiredFlow) {
             out.print("\n");
         }
 
-        flowPulse = 0;  // Reset the flow pulse count for the next measurement
+        // flowPulse = 0;  // Reset the flow pulse count for the next measurement   〔步驟 3〕已由 flow_take() 歸零
         measuringMode = false;
     }
 }

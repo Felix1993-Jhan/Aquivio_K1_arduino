@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════
  *  〔步驟 2b〕架構計畫第 3、4.1 節
  *
- *  ▸ ISR(TIMER5_COMPA_vect):只做 tick_cnt++(步驟 3 加流量計 debounce)
+ *  ▸ ISR(TIMER5_COMPA_vect):只做 tick_cnt++ 與流量計取樣 debounce(〔步驟 3〕flow_isr_1ms)
  *  ▸ tick_service():loop() 呼叫,把累積未處理的 tick 逐一補跑 tick_main()
  *      主迴圈被卡住時,時間在 ISR 內繼續累加,回來時補齊,不會少算
  *  ▸ tick_main():每個 tick 依序呼叫各模組的 xxx_tick_1ms()
