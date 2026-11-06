@@ -47,6 +47,7 @@ enum {
 static_assert(ID_SLOT10 - ID_SLOT1 == 9, "slot ID 必須連續");
 
 #define SLOT_COUNT  (ID_SLOT10 - ID_SLOT1 + 1)
+const int slotCount = SLOT_COUNT;    // 〔步驟 2a〕原 mcu.ino 的名稱,各模組共用
 
 /* 流量計腳位:ISR 熱路徑不查表,直接讀暫存器。
  * 與 PinMap[ID_FLOWMETER] 必須一致,改腳位時兩處同步修改 */

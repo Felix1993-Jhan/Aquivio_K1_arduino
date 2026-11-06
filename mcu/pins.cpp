@@ -1,5 +1,18 @@
 #include "pins.h"
 
+/* 〔步驟 1〕腳位改由下方 PinMap[] 統一定義,讀寫改用 pin_write() / FLOW_PIN_READ()
+ * (直接存取暫存器,取代 pinMode / digitalWrite / digitalRead,架構計畫第 7 節)。
+ * slot(i+1) 對應 ID_SLOT1 + i。舊的 Arduino 腳位編號保留供對照(〔步驟 2a〕由 mcu.ino 移來):
+const int slotPins[] = {8,9,10,11,12,3,7,6,5,4};
+const int slotCount = sizeof(slotPins) / sizeof(slotPins[0]);
+const int bevvalve = 18;
+const int watervalve = 17;
+const int coldvalve = A15;
+const int warmvalve = A14;
+const int waterpump = A13;
+const int flowmeterPin = A8;
+*/
+
 /* 腳位表 — 順序必須與 pins.h 的 ID enum 一致
  * 對照:專案根目錄 CLAUDE.md 腳位表 */
 const pin_def_t PinMap[PIN_COUNT] = {
