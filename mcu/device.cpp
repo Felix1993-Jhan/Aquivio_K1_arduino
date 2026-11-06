@@ -1,18 +1,19 @@
 #include <Arduino.h>
 #include "device.h"
 #include "pins.h"
-#include "flowmeter.h"     // flow_take、flowConstant
+#include "flowmeter.h"     // flow_take、FLOW_UL_PER_PULSE
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 int currentTemp = 0;
 bool measuringMode = false;
+/* 〔步驟 4b〕不用浮點:currentUsage 改為 pump_water 內的整數微升;另三個原程式宣告但未使用。舊宣告保留供對照:
 double currentUsage;
-// 以下三個原程式宣告但未使用,原樣保留
 double coldWaterUsage = 0;
 double warmWaterUsage = 0;
-bool isMeasuring = false;
+*/
+bool isMeasuring = false;   // 原程式宣告但未使用,原樣保留
 
-void pump_water(int state, int water_temp, double desiredFlow) {
+void pump_water(int state, int water_temp) {
     pin_write(ID_WATERVALVE, state == 1);
 
     if (state == 1) {
@@ -42,7 +43,13 @@ void pump_water(int state, int water_temp, double desiredFlow) {
         out.print("\n");
         */
         uint32_t pulses = flow_take();
+        /* 〔步驟 4b〕不用浮點:用水量改為整數微升,輸出時換成公升 3 位小數(標準四捨五入),格式同舊版。
+         * 舊程式保留供對照:
         currentUsage = pulses * flowConstant;
+        ...
+            out.print(currentUsage,3);
+        */
+        uint32_t usage_ul = pulses * FLOW_UL_PER_PULSE;
 
         out.print("pulse:");
         out.print(pulses);
@@ -50,11 +57,11 @@ void pump_water(int state, int water_temp, double desiredFlow) {
 
         if(currentTemp == 1 ){
             out.print("warm water usage:");
-            out.print(currentUsage,3);
+            print_liters_ul(usage_ul, 3);
             out.print("\n");
         }else{
             out.print("cold water usage:");
-            out.print(currentUsage,3);
+            print_liters_ul(usage_ul, 3);
             out.print("\n");
         }
 

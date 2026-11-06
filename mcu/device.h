@@ -12,7 +12,10 @@
  *  ▸ activateSlot / deactivateSlot  開關單一 slot(slotNumber 0~9)並印訊息
  * ═══════════════════════════════════════════════════════════════════════ */
 
+/* 〔步驟 4b〕拿掉原程式即未使用的 double desiredFlow 參數(不用浮點)。舊宣告保留供對照:
 void pump_water(int state, int water_temp, double desiredFlow = -1);   // desiredFlow 原程式即未使用
+*/
+void pump_water(int state, int water_temp);
 void activateSlot(int slotNumber, unsigned long duration);
 void deactivateSlot(int slotNumber);
 

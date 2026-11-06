@@ -16,7 +16,11 @@
 
 #include <stdint.h>
 
+/* 〔步驟 4b〕不用浮點:每 pulse 水量改為整數微升(µL)。3300 µL = 3.3 ml = 0.0033 L(mcu31v2 的常數)。
+ * 重新校正時只改這個整數。舊宣告保留供對照:
 extern const double flowConstant;          // 每 pulse 的水量(公升;上位機 routes.cjs 以公升送水量)
+*/
+#define FLOW_UL_PER_PULSE  3300UL          // 每 pulse 的水量(µL);1 L ≈ 303 pulse
 /* 〔步驟 3〕改由 flow_get() / flow_take() 存取。舊宣告保留供對照:
 extern volatile int flowPulse;             // ISR 遞增;pump_water(0) 時歸零
 */

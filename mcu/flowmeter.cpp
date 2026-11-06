@@ -8,7 +8,9 @@
 /* 〔步驟 2d〕對齊 old/mcu31v2:流量常數改為 0.0033(mcu31v2 註解「依實測校正」)。舊值保留供對照:
 const double flowConstant = 0.0037;
 */
+/* 〔步驟 4b〕不用浮點,改為 flowmeter.h 的 FLOW_UL_PER_PULSE(3300 µL = 0.0033 L)。舊定義保留供對照:
 const double flowConstant = 0.0033;   // L per pulse(依實測校正,同 mcu31v2)
+*/
 /* 〔步驟 3〕計數改為 uint32_t + 原子存取。舊變數保留供對照:
 volatile int flowPulse = 0;
 */

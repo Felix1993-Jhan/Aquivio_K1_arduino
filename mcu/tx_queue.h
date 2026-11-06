@@ -38,6 +38,12 @@ extern TxQueue out;
 
 void tx_poll(void);
 
+/* 〔步驟 4b〕整數輸出成公升小數(不用浮點):ul = 微升,digits = 小數位數(1~6),標準四捨五入。
+ * 例:print_liters_ul(72600, 3) → "0.073";print_liters_ul(300000, 2) → "0.30"
+ * 格式同舊版 Serial.print(x, digits) / String(x)(公升、固定位數);
+ * 數值只在剛好 .5 的邊界可能與舊版浮點差 1 個最小位(舊版浮點本身在此處不一致) */
+void print_liters_ul(uint32_t ul, uint8_t digits);
+
 /* 〔步驟 2c〕舊的 nonBlockingPrint 由 out 取代(見 tx_queue.cpp 註解)
 void nonBlockingPrint(const char* message);   // 有空位才送;新訊息會蓋掉未送完的舊訊息
 */

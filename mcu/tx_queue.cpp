@@ -35,6 +35,22 @@ size_t TxQueue::write(uint8_t c)
     return 1;
 }
 
+void print_liters_ul(uint32_t ul, uint8_t digits)
+{
+    uint32_t div = 1;                                   // 最小位對應的微升數:3 位 → 1000 µL
+    for (uint8_t i = digits; i < 6; i++) div *= 10;
+    uint32_t scale = 1;                                 // 10^digits
+    for (uint8_t i = 0; i < digits; i++) scale *= 10;
+
+    uint32_t units = (ul + div / 2) / div;              // 標準四捨五入到最小位
+    uint32_t frac  = units % scale;
+
+    out.print(units / scale);                           // 整數部分(公升)
+    out.print('.');
+    for (uint32_t s = scale / 10; s > 1 && frac < s; s /= 10) out.print('0');   // 補前導 0
+    out.print(frac);
+}
+
 /* 〔步驟 2c〕舊的 nonBlockingPrint 由上方 TX 佇列取代:
  * 原本 TX 緩衝滿時,新訊息會蓋掉未送完的舊訊息(Progress 可能被截斷);
  * 改為 out.print 放進佇列,不截斷、順序不變。舊程式保留供對照:
