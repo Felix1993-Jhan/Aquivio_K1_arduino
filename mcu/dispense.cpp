@@ -7,6 +7,7 @@
 #include "flowmeter.h"     // flowPulse、flowConstant
 #include "diagnostics.h"   // checkMemory、checkSerialBuffers
 #include "tx_queue.h"      // nonBlockingPrint
+#include "tick.h"          // tick_service(步驟 2b 過渡)
 
 static bool areAnySlotsActive(const unsigned long* slotStartTimes, const double* durations) {
     unsigned long currentTime = millis();
@@ -107,6 +108,7 @@ void execute_actions(const char* actions) {
         checkSerialBuffers();
         delay(10);
         wdt_reset();
+        tick_service();   // 〔步驟 2b 過渡〕出杯阻塞期間仍推進 tick,避免累積超過 16-bit;步驟 5 改狀態機後移除
 
         if (millis() - startTime >= TIMEOUT) {
             Serial.println("ERROR: Execution timeout reached");

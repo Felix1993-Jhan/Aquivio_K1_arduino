@@ -20,6 +20,7 @@
 #include "uart_cmd.h"
 #include "tx_queue.h"
 #include "diagnostics.h"
+#include "tick.h"          // 〔步驟 2b〕1 ms tick
 
 bool canPrint = true;      // 原程式恆為 true
 
@@ -48,6 +49,7 @@ void setup() {
     pinMode(flowmeterPin, INPUT_PULLUP);
     */
     flow_init();      // 原 PCICR / PCMSK2 兩行
+    tick_init();      // 〔步驟 2b〕Timer5 1 ms tick
 
     Serial.begin(9600);
     uart_cmd_init();  // 原 memset(inputString, ...)
@@ -59,7 +61,8 @@ void loop() {
 
     if (!canPrint) return;
 
-    diag_poll();      // 原 loop() 開頭:每 30 s 記憶體檢查、每 1 s mcuAlive
+    tick_service();   // 〔步驟 2b〕補跑累積的 1 ms tick → 各模組計數、設旗標
+    diag_poll();      // 原 loop() 開頭:每 30 s 記憶體檢查、每 1 s mcuAlive(看 tick 旗標)
     cmd_poll();       // 原 loop() 中段:有完整命令就處理
 
     if (flowPulseOccurred) {
