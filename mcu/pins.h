@@ -41,7 +41,8 @@ enum {
     ID_SLOT6, ID_SLOT7, ID_SLOT8, ID_SLOT9, ID_SLOT10,
     ID_WATERVALVE, ID_BEVVALVE, ID_WATERPUMP, ID_WARMVALVE, ID_COLDVALVE,
     ID_FLOWMETER,
-    ID_PRESSURE,      // 〔新增 2026-11-06〕A1:目前一般輸入,未來改 ADC 接水壓感測器;原 K1 程式沒有
+    ID_PRESSURE,      // 〔新增 2026-11-06〕A1:水壓感測器 ADC(步驟 6 起);原 K1 程式沒有
+    ID_HEARTBEAT,     // 〔新增 2026-11-09〕D23:板子心跳,每 1 秒翻轉(0.5 Hz);原 K1 程式沒有
     PIN_COUNT
 };
 static_assert(ID_SLOT10 - ID_SLOT1 == 9, "slot ID 必須連續");

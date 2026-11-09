@@ -7,7 +7,7 @@
 
 用法(Git Bash):
     python -I -X utf8 tools/k1_pour_log.py --port COM28                   # 正式版:跑全部適用情境(含 120 秒逾時)
-    python -I -X utf8 tools/k1_pour_log.py --port COM28 --flowgen         # 除錯版 + D23 → A8:跑到量相關情境
+    python -I -X utf8 tools/k1_pour_log.py --port COM28 --flowgen         # 除錯版 + D22 → A8:跑到量相關情境
     python -I -X utf8 tools/k1_pour_log.py --port COM28 --only zero_slot,zero_time
     python -I -X utf8 tools/k1_pour_log.py --list                         # 列出情境
     python -I -X utf8 tools/k1_pour_log.py --port COM28 --cmd '{"cold":"0","slot1":"2000"}'   # 只看 log,不判斷
@@ -15,7 +15,7 @@
 
 韌體版本:
     正式版  = 不帶 K1_DEBUG_FLOW_GEN;A8 沒有脈衝(到不了量)
-    除錯版  = 編譯加 -DK1_DEBUG_FLOW_GEN,杜邦線 D23 → A8(泵開著時約 6 Hz,1 pulse = 3.3 ml)
+    除錯版  = 編譯加 -DK1_DEBUG_FLOW_GEN,杜邦線 D22 → A8(泵開著時約 6 Hz,1 pulse = 3.3 ml)
     --flowgen 表示板子燒的是除錯版且已接線;不帶則視為正式版
 
 情境(模式:正式 = 只在正式版跑、除錯 = 只在 --flowgen 跑、皆可):
@@ -138,7 +138,7 @@ SCENARIOS = {
 def main():
     ap = argparse.ArgumentParser(description="K1 單筆出杯情境測試")
     ap.add_argument("--port")
-    ap.add_argument("--flowgen", action="store_true", help="板子是除錯版且已接 D23 → A8")
+    ap.add_argument("--flowgen", action="store_true", help="板子是除錯版且已接 D22 → A8")
     ap.add_argument("--only", help="只跑指定情境,逗號分隔")
     ap.add_argument("--list", action="store_true", help="列出情境")
     ap.add_argument("--cmd", help="自由模式:送這筆命令(不用加 #),只印 log")

@@ -27,8 +27,9 @@ extern volatile int flowPulse;             // ISR 遞增;pump_water(0) 時歸零
 extern volatile bool flowPulseOccurred;    // 有計到 pulse 時設 1(loop() 清除,原程式即無其他用途)
 
 /* ── 除錯用:模擬流量計(預設關閉,正式版不編入)──
- * 開啟後 D23(PA1,空腳)輸出方波模擬流量計,以杜邦線接到 A8:
+ * 開啟後 D22(PA0,空腳)輸出方波模擬流量計,以杜邦線接到 A8:
  *   泵(waterpump)開著時約 6 Hz(83 / 84 ms 交替翻轉),泵關著時維持高準位(同 A8 上拉的靜止狀態)
+ *   〔2026-11-09〕原為 D23(PA1);D23 改當板子心跳(pins.cpp ID_HEARTBEAT),模擬流量計移到 D22
  * 開啟方式:取消下一行註解,或 arduino-cli 加 --build-property "compiler.cpp.extra_flags=-DK1_DEBUG_FLOW_GEN" */
 // #define K1_DEBUG_FLOW_GEN
 

@@ -38,25 +38,26 @@ ISR(PCINT2_vect) {
 void flow_init(void) {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { flow_cnt = 0; }
 #ifdef K1_DEBUG_FLOW_GEN
-    PORTA |= _BV(PA1);                         // D23 先定高準位(同流量計靜止),再設輸出
-    DDRA  |= _BV(PA1);
+    PORTA |= _BV(PA0);                         // D22 先定高準位(同流量計靜止),再設輸出
+    DDRA  |= _BV(PA0);                         // 〔2026-11-09〕原 D23(PA1),D23 改當心跳
 #endif
 }
 
 #ifdef K1_DEBUG_FLOW_GEN
-/* 除錯用:D23(PA1)模擬流量計方波,只在 Timer5 ISR 內呼叫(在 flow_isr_1ms 開頭)
- * 寫 1 到 PINA = 翻轉 PORTA,單一寫入、不是讀改寫 → ISR 內寫也不會和主迴圈衝突(Port A 只有 D23 在此寫) */
+/* 除錯用:D22(PA0)模擬流量計方波,只在 Timer5 ISR 內呼叫(在 flow_isr_1ms 開頭)
+ * 寫 1 到 PINA = 翻轉,單一寫入;PORTA |= 為 SBI 單指令 → 都不是讀改寫,
+ * 不會和主迴圈翻轉同一個 Port A 的 D23 心跳(PA1)互相蓋掉 */
 static void flow_gen_1ms(void) {
     static uint8_t ms = 0, half = 83;
     if (PINK & _BV(PK5)) {                     // waterpump(A13 = PK5)開著 → 產生方波
         if (++ms >= half) {
             ms = 0;
             half = (half == 83) ? 84 : 83;     // 83 + 84 = 167 ms 一個週期 ≈ 6 Hz
-            PINA = _BV(PA1);                   // 翻轉 D23
+            PINA = _BV(PA0);                   // 翻轉 D22
         }
     } else {                                   // 泵關著 → 回到高準位、重新計時
         ms = 0;
-        PORTA |= _BV(PA1);                     // Port A 在 I/O 區,常數位址 → SBI 單指令(原子)
+        PORTA |= _BV(PA0);                     // Port A 在 I/O 區,常數位址 → SBI 單指令(原子)
     }
 }
 #endif
@@ -67,7 +68,7 @@ static void flow_gen_1ms(void) {
  * 只在 ISR 內執行,static 變數不需原子保護 */
 void flow_isr_1ms(void) {
 #ifdef K1_DEBUG_FLOW_GEN
-    flow_gen_1ms();                            // 除錯:先更新 D53 模擬波形(接到 A8)
+    flow_gen_1ms();                            // 除錯:先更新 D22 模擬波形(接到 A8)
 #endif
     static uint8_t on_ms = 0, off_ms = 0, latched = 0;
     if (FLOW_PIN_READ()) {                     // H = OFF(上拉,未導通)

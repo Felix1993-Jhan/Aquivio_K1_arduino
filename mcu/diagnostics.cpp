@@ -4,6 +4,7 @@
 #include "MemoryFree.h"
 
 #include "tick.h"          // K1_DEBUG_TICK、tick_backlog_max
+#include "pins.h"          // 〔2026-11-09〕pin_toggle(ID_HEARTBEAT)
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
 
 /* 〔步驟 2b〕週期改由 1 ms tick 計數(diag_tick_1ms),不再用 millis() 比較。
@@ -16,8 +17,10 @@ const unsigned long mcuAliveInterval = 1 * 1000; // Print every 1000 ms (1 secon
 */
 #define MEMORY_CHECK_MS   30000u   // 每 30 秒檢查記憶體(uint16 上限 65535)
 #define MCU_ALIVE_MS       1000u   // 每 1 秒送 mcuAlive
+#define HEARTBEAT_MS       1000u   // 〔2026-11-09〕D23 心跳:每 1 秒翻轉一次(0.5 Hz)
 
 static uint16_t memory_ms = 0, alive_ms = 0;          // 只在 tick_main(主迴圈)內修改
+static uint16_t heartbeat_ms = 0;
 static uint8_t  memory_due = 0, alive_due = 0;        // 週期到 → 設旗標,diag_poll 輸出後清除
 
 
@@ -73,6 +76,10 @@ void checkSerialBuffers() {
 void diag_tick_1ms(void) {
     if (++memory_ms >= MEMORY_CHECK_MS) { memory_ms = 0; memory_due = 1; }
     if (++alive_ms  >= MCU_ALIVE_MS)    { alive_ms  = 0; alive_due  = 1; }
+    // 〔2026-11-09〕D23 心跳:待機、出杯中都翻轉(與 mcuAlive 只在待機送不同)。
+    // 在主迴圈(tick_main)翻轉而非 ISR → 主迴圈卡住時心跳停止;補跑 tick 時仍準時。
+    // pin_toggle = 寫 PINx 單次寫入,不是讀改寫,不會和 ISR 寫 Port A(除錯版 D22)衝突
+    if (++heartbeat_ms >= HEARTBEAT_MS) { heartbeat_ms = 0; pin_toggle(ID_HEARTBEAT); }
 }
 
 /* 原 loop() 開頭的兩段(順序不變:先記憶體、再 mcuAlive)

@@ -38,6 +38,9 @@ const pin_def_t PinMap[PIN_COUNT] = {
     { &PINF, _BV(PF1), PIN_IN,        0 },   // pressure    A1(暫用一般輸入)
      */
     { &PINF, _BV(PF1), PIN_ANALOG,    0 },   // pressure    A1(ADC1)
+    /* 〔新增 2026-11-09〕heartbeat D23:空腳,當板子心跳(使用者指定)。由主迴圈 diag_tick_1ms() 每 1 秒翻轉
+     * → 主迴圈卡住時就停止翻轉。正式版、除錯版皆有(原 D23 的除錯用模擬流量計移到 D22) */
+    { &PINA, _BV(PA1), PIN_OUT,       0 },   // heartbeat   D23
 };
 
 /* 初始化所有腳位:取代 setup() 內的 pinMode / digitalWrite(LOW)

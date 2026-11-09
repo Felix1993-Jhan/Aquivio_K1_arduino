@@ -1,12 +1,12 @@
 """K1 水量測試 — 用除錯版韌體的模擬流量計,驗證「到量停水」與輸出
 
 適用韌體:H4(4fc8663)起;配比換算於 70a3760、slot 開啟順序與時間於 d6ec6fa 改為步驟 5 版
-          除錯版 + 杜邦線 D23 → A8
+          除錯版 + 杜邦線 D22 → A8
 最後驗證:d6ec6fa(步驟 5,除錯版)seed 11 6 / 6 PASS
 
 前提:
   - 燒錄除錯版:arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DK1_DEBUG_FLOW_GEN"
-  - 杜邦線:D23 → A8(D23 在泵開著時輸出約 6 Hz 方波,泵關著時維持高準位)
+  - 杜邦線:D22 → A8(D22 在泵開著時輸出約 6 Hz 方波,泵關著時維持高準位;2026-11-09 前為 D23)
   - 會讓泵 / 閥 / slot 輸出動作,空板測試用
 
 用法(Git Bash):
@@ -112,7 +112,7 @@ def usage_str(p):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="K1 水量測試(除錯版模擬流量計,D23 → A8)")
+    ap = argparse.ArgumentParser(description="K1 水量測試(除錯版模擬流量計,D22 → A8)")
     ap.add_argument("--port")
     ap.add_argument("--orders", type=int, default=6)
     ap.add_argument("--seed", type=int, default=1)
