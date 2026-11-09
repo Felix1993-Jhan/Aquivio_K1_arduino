@@ -1,5 +1,8 @@
 """K1 序列埠簡易測試 — 量 mcuAlive 間隔、ping 回應時間
 
+適用韌體:步驟 2b(09802ba)起;正式版、除錯版皆可,不需接線
+最後驗證:d6ec6fa(步驟 5,正式版)mcuAlive 平均 1000.0 ms、ping → pong 12 ms
+
 只送 `ping#`,**不送任何會讓泵 / 閥 / slot 動作的命令**。
 
 用法(Git Bash):
