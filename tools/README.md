@@ -12,6 +12,7 @@
 | `k1_pour_log.py` | 單筆出杯情境：水量 0 + slot / time、數字格式水量、120 秒逾時、到量後再印用水量;也可送任意命令只看 log | 正式;到量情境用除錯 + `--flowgen` | 到量情境 D23 → A8 | 各情境見檔頭 | `d6ec6fa`:正式 28 / 28、除錯 7 / 7 PASS |
 | `k1_order_test.py` | 隨機訂單、slot 開啟順序與時間、出杯中穿插命令 | 正式 | — | `4001f2d`(2d);預期值 `d6ec6fa` 改版 | `d6ec6fa`:seed 3 |
 | `k1_volume_test.py` | 模擬流量計到量停水、配比換算、slot 關閉時間 | 除錯 | D23 → A8 | `4fc8663`(H4);預期值 `d6ec6fa` 改版 | `d6ec6fa`:seed 11 6 / 6 PASS |
+| `k1_pressure_test.py` | `pressure#`:開機尚無資料回 `null`、待機讀值、出杯中立刻回 | 正式 / 除錯 | A1 接待測電壓(空板目前 5 V → 10 kΩ → A1,讀 1023) | 步驟 6 | 步驟 6:7 / 7 PASS(`--expect 1023`) |
 | `k1_harness.py` | 共用模組(開 port、時間表送命令、PASS / FAIL),本身不是測試 | — | — | — | — |
 
 - **正式版**:不帶 `K1_DEBUG_FLOW_GEN` 編譯。A8 沒有脈衝，出水到不了量。表中標「正式」的測試，也可以用除錯版拔掉 D23 → A8 杜邦線來跑(A8 同樣沒有脈衝)
@@ -25,6 +26,7 @@ python -I -X utf8 tools/k1_cmd_parse_test.py --port COM28
 python -I -X utf8 tools/k1_pour_cmd_test.py --port COM28
 python -I -X utf8 tools/k1_pour_log.py --port COM28              # 正式版(或除錯版拔線),約 2.5 分鐘(含逾時)
 python -I -X utf8 tools/k1_pour_log.py --port COM28 --flowgen    # 除錯版
+python -I -X utf8 tools/k1_pressure_test.py --port COM28 --expect 1023
 python -I -X utf8 tools/k1_serial_test.py --port COM28
 python -I -X utf8 tools/k1_order_test.py --port COM28 --seed 3
 python -I -X utf8 tools/k1_volume_test.py --port COM28 --seed 11  # 除錯版

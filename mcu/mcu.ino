@@ -11,7 +11,7 @@
  *    tx_queue     字串回覆(TX 發送佇列,⚠ K1 新增)
  *    tick         1 ms 計時(Timer5)與每 1 ms 的工作分派
  *    diagnostics  看門狗、記憶體、mcuAlive、Serial 緩衝檢查
- *    pressure     A1 水壓(已寫好、尚未啟用)
+ *    pressure     A1 水壓 ADC(〔步驟 6〕啟用,命令 pressure#)
  *    MemoryFree   剩餘 SRAM 計算
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -23,6 +23,7 @@
 #include "diagnostics.h"
 #include "tick.h"          // 〔步驟 2b〕1 ms tick
 #include "dispense.h"      // 〔步驟 5〕dispense_busy
+#include "pressure.h"      // 〔步驟 6〕pressure_init
 
 bool canPrint = true;      // 原程式恆為 true
 
@@ -50,6 +51,7 @@ void setup() {
 
     pinMode(flowmeterPin, INPUT_PULLUP);
     */
+    pressure_init();  // 〔步驟 6〕ADC 設定(A1 的 PIN_ANALOG 已在 pin_init_all() 設好)
     flow_init();      // 〔步驟 3〕清除流量計數(原 PCICR / PCMSK2 兩行已移除,改由 Timer5 1 ms 取樣)
     tick_init();      // 〔步驟 2b〕Timer5 1 ms tick
 

@@ -12,11 +12,11 @@
  *  ▸ 非阻塞:每 200 ms 啟動一次轉換,下一個 tick 檢查完成再取值,不空等
  *  ▸ 只在主迴圈呼叫,不開 ADC 中斷
  *
- *  ⚠ 目前尚未接上主程式:
- *    - 硬體尚未改線,PinMap[ID_PRESSURE] 暫為 PIN_IN;啟用前改為 PIN_ANALOG(見 pins.cpp)
- *    - pressure_tick_1ms() 要等步驟 2 的 1 ms tick 完成後,從 tick_main() 呼叫
- *    - 上位機指令:上位機主動查詢(例 `pressure#` → `pressure:512`),倒水中照 5.3 先收不執行
- *    - 輸出為原始 ADC 值 0~1023;換算成水壓需要感測器規格(待查)
+ *  ▸ 〔步驟 6〕已接上主程式:pressure_init() 在 setup()、pressure_tick_1ms() 在 tick_main()
+ *    PinMap[ID_PRESSURE] = PIN_ANALOG;K1 轉接板需割斷兩條線、串 10 kΩ 限流電阻
+ *  ▸ 上位機主動查詢:`pressure#` → 回傳 `pressure` 再回 `pressure:<0~1023>`;尚無資料時 `pressure:null`
+ *    出杯中也立刻回覆(不暫存)。last_raw 只在主迴圈寫、讀(tick_main / cmd_poll),不需原子保護
+ *  ▸ 輸出為原始 ADC 值 0~1023(10-bit;K2 為 12-bit,故不換算);換算成水壓需要感測器規格(待查)
  *    - mV ≈ raw × 5000 / 1024,但實際參考 = 板上 AVCC,USB 供電時未必剛好 5.00 V
  *
  *  ⚠ 硬體:參考用 AVCC 時,AREF 腳不可外接電壓(內部會與 AVCC 相連)

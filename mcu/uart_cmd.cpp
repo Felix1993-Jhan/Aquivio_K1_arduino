@@ -4,6 +4,7 @@
 #include "device.h"        // pump_water
 #include "dispense.h"      // execute_actions、〔步驟 5〕dispense_busy / abort / stop_slot
 #include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
+#include "pressure.h"      // 〔步驟 6〕pressure_raw / pressure_valid
 
 /* 〔2026-11-06〕命令長度上限 200 → 256:上位機 10 個 slot 全開、每個帶 2 位小數(例 "120000.99")
  * 再加 time 時最長約 230 字元,超過舊上限 199 → 整筆被丟棄(舊版 mcu31v2 則永久卡死)。
@@ -38,6 +39,12 @@ static void process_command(char* cmd) {
         pump_water(1, 0);
     } else if (strcmp(cmd, "startwarmwater") == 0) {
         pump_water(1, 1);
+    } else if (strcmp(cmd, "pressure") == 0) {
+        // 〔步驟 6〕回最近一次的 ADC 原始值 0~1023(每 200 ms 更新;不在這裡啟動轉換,不會讀到轉換中的值)
+        //          開機後尚未取得第一筆 → pressure:null
+        out.print("pressure:");
+        if (pressure_valid()) out.println(pressure_raw());
+        else                  out.println("null");
     } else if (strcmp(cmd, "stop") == 0) {
         pump_water(0, 0);
         for (int i = 0; i < slotCount; i++) {
@@ -80,6 +87,7 @@ static void process_command(char* cmd) {
  *   出杯不再阻塞 → 出杯中也會收到命令:
  *     stop       立刻收尾(印 finish / end)
  *     stopslotN  立刻關該 slot(尚未開的取消不開)〔停止類,上位機若送就執行;需要討論〕
+ *     pressure   〔步驟 6〕立刻回覆(只讀值,不影響出杯;使用者 2026-11-09 決定 P4)
  *     其他        (ping、startslotN、startcoldwater、新 JSON…)暫存,end 之後依序執行(同舊版)
  *   出料的配置在下單時就已決定,出杯中只需即時處理停止類命令(使用者 2026-11-06)
  * ══════════════════════════════════════════════════════════ */
@@ -117,6 +125,10 @@ static void handle_command(char* cmd) {
     if (strcmp(cmd, "stop") == 0) {
         out.println(cmd);
         dispense_abort();
+        return;
+    }
+    if (strcmp(cmd, "pressure") == 0) {   // 〔步驟 6〕出杯中也立刻回(回傳命令 + 值,同待機)
+        process_command(cmd);
         return;
     }
     for (int i = 0; i < slotCount; i++) {

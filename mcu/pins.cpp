@@ -32,11 +32,12 @@ const pin_def_t PinMap[PIN_COUNT] = {
     { &PINK, _BV(PK6), PIN_OUT,       0 },   // warmvalve   A14
     { &PINK, _BV(PK7), PIN_OUT,       0 },   // coldvalve   A15
     { &PINK, _BV(PK0), PIN_IN_PULLUP, 0 },   // flowmeter   A8(FLOW_PIN_READ 同步)
-    /* 〔新增 2026-11-06〕pressure A1:未來接水壓感測器(0~5 V,ADC)。
-     * 硬體尚未改線(需割斷兩條線、串 10 kΩ 限流電阻),目前暫用一般輸入(無上拉,與 reset 後狀態相同)。
-     * 改線後:註解掉 PIN_IN 這行、啟用 PIN_ANALOG 這行(PRESSURE_ADC_CH 同步) */
+    /* 〔新增 2026-11-06〕pressure A1:水壓感測器(0~5 V,ADC);K1 轉接板需割斷兩條線、串 10 kΩ 限流電阻。
+     * 〔步驟 6〕改為 ADC(關數位輸入緩衝 DIDR0);PRESSURE_ADC_CH 同步為 1。
+     * 原「暫用一般輸入」(無上拉,與 reset 後狀態相同)保留供對照:
     { &PINF, _BV(PF1), PIN_IN,        0 },   // pressure    A1(暫用一般輸入)
-//  { &PINF, _BV(PF1), PIN_ANALOG,    0 },   // pressure    A1(ADC,改線後啟用)
+     */
+    { &PINF, _BV(PF1), PIN_ANALOG,    0 },   // pressure    A1(ADC1)
 };
 
 /* 初始化所有腳位:取代 setup() 內的 pinMode / digitalWrite(LOW)

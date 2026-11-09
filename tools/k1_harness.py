@@ -15,9 +15,10 @@ import serial  # noqa: E402
 
 
 class Board:
-    """開 COM port(Mega 會 auto-reset)→ 等 ready → 再等 1.5 秒讓開機訊息送完"""
+    """開 COM port(Mega 會 auto-reset)→ 等 ready → 再等 settle_s 秒(預設 1.5)讓開機訊息送完
+    settle_s = 0:收到 ready 立刻返回(例:測開機後第一筆資料還沒出來時的回應)"""
 
-    def __init__(self, port=None, baud=9600):
+    def __init__(self, port=None, baud=9600, settle_s=1.5):
         port = port or find_port()
         try:
             self.ser = serial.Serial(port, baud, timeout=0.02)
@@ -27,7 +28,7 @@ class Board:
         self.rd = LineReader(self.ser, self.t0)
         if self.rd.wait_for("ready", 6000) is None:
             print("⚠ 6 秒內沒收到 ready(板子可能沒重開,或韌體不同)")
-        self.idle(1.5)
+        self.idle(settle_s)
 
     def now(self):
         return (time.perf_counter() - self.t0) * 1000.0
