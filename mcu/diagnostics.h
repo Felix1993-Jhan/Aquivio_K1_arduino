@@ -9,9 +9,11 @@
  *
  *  ▸ setupWatchdog()  8 秒看門狗
  *  ▸ diag_tick_1ms()  每 1 ms 由 tick_main() 呼叫:D23 心跳每 1 秒翻轉(0.5 Hz)
+ *  ▸ diag_flow_mirror_1ms()  〔暫時〕每 1 ms 由 tick_main() 呼叫:D66 與流量計 A8 同步(看 LED 用)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 void setupWatchdog();
 void diag_tick_1ms(void);
+void diag_flow_mirror_1ms(void);
 
 #endif

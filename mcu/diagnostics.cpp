@@ -21,3 +21,11 @@ void setupWatchdog() {
 void diag_tick_1ms(void) {
     if (++heartbeat_ms >= HEARTBEAT_MS) { heartbeat_ms = 0; pin_toggle(ID_HEARTBEAT); }
 }
+
+/* 〔2026-11-11 新增,暫時〕D66(bevvalve,轉接板上沒接負載,只看 LED)與流量計 A8 同步:A8 高 → D66 高。
+ * 跟原始腳位(未 debounce)。在主迴圈每 1 ms 做:D66 與水泵 / 閥同在 Port K,pin_write 為讀改寫,
+ * 所有 Port K 寫入都在主迴圈才不會互相蓋掉(不放 Timer5 ISR)。
+ * 要停用:把 tick_main 裡的 diag_flow_mirror_1ms() 呼叫註解掉 */
+void diag_flow_mirror_1ms(void) {
+    pin_write(ID_BEVVALVE, FLOW_PIN_READ() != 0);
+}

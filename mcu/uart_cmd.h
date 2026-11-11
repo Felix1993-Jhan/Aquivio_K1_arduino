@@ -27,6 +27,8 @@
  *        0x06 / 0x07 在 P4 / P5 前暫回 PING 內容。
  *  〔P4〕0x06 SET_PULSE 照搬 K2(Type 0 常溫、1 冷水;2 以上回不支援格式);到量主動送完成通知。
  *        0x07 在 P5 前仍暫回 PING 內容。
+ *  〔P5〕0x07 LONG_PRESSURE(freeflow)照搬 K2 常溫 / 冷水模式(見 freeflow.h);Type 2 以上回不支援格式 9 byte;
+ *        N 上限 FREEFLOW_MAX(19),超過丟棄不回;0x02 同時重置 freeflow。
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #include <stdint.h>

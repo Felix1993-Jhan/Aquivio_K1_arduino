@@ -2,6 +2,7 @@
 #include "device_ctrl.h"
 #include "flowmeter.h"     // 〔P4〕flow_get、flow_take
 #include "uart_cmd.h"      // 〔P4〕uart_send_pulse_done
+#include "freeflow.h"      // 〔P5〕freeFlow_Run、timer1_longPressure_flowcount
 
 /* 〔P4〕SET_PULSE(0x06)狀態,同 K2 globals(Pulse / PulseStart / PulseStop / PulseType)
  * 只在主迴圈存取(uart_cmd、tick_main)→ 不需原子保護 */
@@ -13,7 +14,7 @@ uint8_t  PulseType = 0;      // 0 = 常溫、1 = 冷水(完成通知回傳)
 static uint32_t flow_last = 0;   // 上次讀到的流量總計數(只在主迴圈存取)
 
 /* K2 stm32u0xx_it.c timer1_SET_Count():每個 ID 的 0x00 倒數,到 0 時若仍開著 → 記進 Stop
- * (K2 呼叫條件為 freeFlow_Run == 0,freeflow 於 P5 加入) */
+ * 呼叫條件同 K2:freeFlow_Run == 0 才跑(freeflow 中 0x00 倒數停住),見 tick_main */
 void timer1_SET_Count(void)
 {
     for (int i = 0; i < DEVICE_ID_COUNT; i++) {
@@ -41,6 +42,14 @@ static void pulse_consume(uint32_t d)
     }
 }
 
+/* 新增 d 個脈衝時要做的事(同 K2 timer1_flowmeter() 確認 1 個脈衝時的段落):
+ *   扣 0x06 的 Pulse;〔P5〕freeflow 中累積各 slot 的開啟時間(K2 設 FlowChange,同一次中斷內累積) */
+static void flow_pulses(uint32_t d)
+{
+    pulse_consume(d);
+    if (freeFlow_Run == 1 && d > 0) timer1_longPressure_flowcount(d);
+}
+
 /* 〔K1,與 K2 不同〕K2 在流量計中斷內每確認 1 個脈衝就扣 Pulse;K1 的流量計模組(flowmeter,兩分支共用)不改,
  * 改為每 1 ms 讀總計數,以「這次 − 上次」得到新增脈衝數再扣(方案 A,在主迴圈)。
  * 無號相減在計數繞回時仍正確(同計時器 now − start);flow_cnt 滿值即停、不會繞回 */
@@ -49,15 +58,21 @@ void timer1_pulse_count(void)
     uint32_t now = flow_get();
     uint32_t d = now - flow_last;
     flow_last = now;
+    /* 〔P5〕改呼叫 flow_pulses(d)(加上 freeflow 累積)。P4 原寫法:
     pulse_consume(d);
+     */
+    flow_pulses(d);
 }
 
-/* 0x04 流量歸零:取代直接呼叫 flow_take()。歸零前「上次 tick 之後新增、尚未扣」的脈衝先補扣,
+/* 0x04 流量歸零:取代直接呼叫 flow_take()。歸零前「上次 tick 之後新增、尚未處理」的脈衝先補做,
  * 再把 flow_last 設為 0,避免下一次相減錯誤 */
 void pulse_flow_clear(void)
 {
     uint32_t taken = flow_take();       // 原子讀取並歸零
+    /* 〔P5〕改呼叫 flow_pulses()(加上 freeflow 累積)。P4 原寫法:
     pulse_consume(taken - flow_last);
+     */
+    flow_pulses(taken - flow_last);
     flow_last = 0;
 }
 

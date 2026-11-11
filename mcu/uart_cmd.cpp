@@ -4,6 +4,7 @@
 #include "device_ctrl.h"   // 〔P2〕handleSW、Status、Counter1ms
 #include "flowmeter.h"     // 〔P3〕flow_get、flow_take
 #include "timer_task.h"    // 〔P4〕Pulse、PulseStart、PulseType、pulse_flow_clear
+#include "freeflow.h"      // 〔P5〕channel7_CMD、freeFlow_Run、freeflow_Reset、sort_by_speed
 
 /* 緩衝大小:K2 為 256(DATA_SIZE)。K1 SRAM 只有 8 KB,改 64:
  * 最長的 0x07 LONG_PRESSURE = 7 + 3N byte,N ≤ 19 時 ≤ 64 */
@@ -60,7 +61,12 @@ typedef uint8_t (*len_calc_fn)(uint8_t sub);
 static uint8_t fixed_9(uint8_t sub) { (void)sub; return 8; }
 
 // LONG_PRESSURE (0x07):sub 是裝置數量,每裝置 3 bytes(id + val_lo + val_hi)
+/* 〔P5,K1 修正〕K2 回傳 uint8_t 的 6 + 3N,N ≥ 84 時溢位繞回小數字(例:N = 86 → 8,被當成 9 byte 收下,
+ * 之後 LONG_PRESSURE_CMD 迴圈寫 86 組,超出 channel7_CMD)。N 超過 FREEFLOW_MAX 回 0xFF(≥ DATA_SIZE)→ 收包端丟棄。
+ * K2 原寫法:
 static uint8_t long_pressure_len(uint8_t sub) { return 6 + (sub * 3); }
+ */
+static uint8_t long_pressure_len(uint8_t sub) { return (sub > FREEFLOW_MAX) ? 0xFF : 6 + (sub * 3); }
 
 // ERROR_REPORT (0x08):只有 SET (sub=0x01) 是 16 bytes,其他 sub 都 7 bytes
 static uint8_t error_report_len(uint8_t sub) { return (sub == 0x01) ? 15 : 6; }
@@ -143,7 +149,7 @@ static void rx_byte(uint8_t b)
     /* 〔P1〕原為固定 9 byte(ur1Rx_Lenght = 8);〔P3〕改為 K2 的查表決定長度 */
     if (RxIndex == 5) {
         if (!lookup_cmd_len(RxBuffer[3], RxBuffer[4], &ur1Rx_Lenght)
-            || ur1Rx_Lenght >= DATA_SIZE) {                // 〔K1 加〕超過緩衝(0x07 N ≥ 20)也丟棄
+            || ur1Rx_Lenght >= DATA_SIZE) {                // 〔K1 加〕超過緩衝(0x07 N > FREEFLOW_MAX)也丟棄
             // 未知 cmd_id → 重新讀取(同 K2:不回覆)
             RxIndex = 0;
             ur1Rx_Lenght = 8;
@@ -188,7 +194,7 @@ static void SWITCH_START_CMD(void)
 
 static void SWITCH_STOP_CMD(void)
 {
-    /* K2:if(freeFlow_Run) freeflow_Reset();  → P5 freeflow 加入時補上 */
+    if (freeFlow_Run) freeflow_Reset(); // 〔P5〕放開按鍵時,判斷是否有運行過長壓,有則清空(同 K2,不看遮罩)
     handleSW(2, rx_u32());              // 不移植 PressPump_OnHostStop
 }
 
@@ -241,6 +247,16 @@ static uint32_t pulse_start_by_type(uint8_t type)
     }
 }
 
+/* ⚠ K1 自訂(討論稿 3.7):K1 沒有的功能,回 9 byte:[4] = 代碼,[5..7] = FF 代碼 FF
+ * 〔P5〕移到 SET_PULSE_CMD 前面,0x06 / 0x07 的不支援 Type 共用 */
+static void UNSUPPORTED_CMD(uint8_t code)
+{
+    TxBuffer[4] = code;
+    TxBuffer[5] = 0xFF;
+    TxBuffer[6] = code;
+    TxBuffer[7] = 0xFF;
+}
+
 /* K2 SET_PULSE_CMD:依流量脈衝數出水。[4] = Type、[5..7] = 脈衝數 24-bit LE;回覆 = 原封包,
  * 脈衝扣到 0 時由 Tmr1_Interrupt_main 關閉並主動送完成通知。
  * ⚠ K1:Type 2(氣泡水)及其他未定義 Type → 不支援格式 [Type] FF [Type] FF,不動作(討論稿 3.7)
@@ -249,10 +265,7 @@ static void SET_PULSE_CMD(void)
 {
     uint8_t type = RxBuffer[4];
     if (type > 1) {
-        TxBuffer[4] = type;
-        TxBuffer[5] = 0xFF;
-        TxBuffer[6] = type;
-        TxBuffer[7] = 0xFF;
+        UNSUPPORTED_CMD(type);          // 〔P5〕原為逐一填 [4..7],內容相同,改共用
         return;
     }
     Pulse = ((uint32_t)RxBuffer[7] << 16) | ((uint32_t)RxBuffer[6] << 8) | RxBuffer[5];
@@ -261,13 +274,48 @@ static void SET_PULSE_CMD(void)
     handleSW(1, PulseStart);            // 做 Start 的動作
 }
 
-/* ⚠ K1 自訂(討論稿 3.7):K1 沒有的功能,回 9 byte:[4] = 代碼,[5..7] = FF 代碼 FF */
-static void UNSUPPORTED_CMD(uint8_t code)
+/* K2 LONG_PRESSURE_CMD(〔P5〕):freeflow,slot 依流量開啟。
+ *   封包:[4] = N(組數)、每組 3 byte [ID][時間 L][時間 H](每 pulse 該 slot 開幾 ms)、CS 前一 byte = Type
+ *   N > 0:記錄各 slot,ID 11~13(UVC)直接開;N = 0:停料、只出水(slot + 水泵 + 閥全關,再依 Type 開水泵 + 閥)
+ *   最後依 Type 開水泵 + 閥;回覆 = 原封包(7 + 3N byte)
+ * ⚠ K1:Type 2(氣泡水,K2 走模式 2)及其他未定義 Type → 不支援格式 9 byte,不動作;回傳 0 讓呼叫端改 9 byte
+ * 不移植 PressPump_OnHostStart(水桶補壓)、ShortPulse_Register(氣泡水短脈衝) */
+static int LONG_PRESSURE_CMD(void)
 {
-    TxBuffer[4] = code;
-    TxBuffer[5] = 0xFF;
-    TxBuffer[6] = code;
-    TxBuffer[7] = 0xFF;
+    uint8_t type = RxBuffer[ur1Rx_Lenght - 1];      // Type 永遠在 CS 前一 byte
+    if (type > 1) {
+        UNSUPPORTED_CMD(type);
+        return 0;
+    }
+    PulseStart   = pulse_start_by_type(type);
+    freeFlow_Run = 1;                               // K2:(type == 2) ? 2 : 1;K1 沒有氣泡水
+    if (RxBuffer[4]) {
+        temp_main_freeflow = 0;
+        pump0_9count = 0;                           // 確認使用了多少 slot
+        for (uint8_t i = 0; i < RxBuffer[4]; i++) {
+            // 將傳遞下來的資料記錄下來,並將之前的累加量清空
+            uint8_t base = 5 + (i * 3);             // 3 筆資料一組
+            uint8_t id   = RxBuffer[base];
+            uint16_t val = (uint16_t)RxBuffer[base + 1] | ((uint16_t)RxBuffer[base + 2] << 8);
+            channel7_CMD[i].acc = 0;
+            channel7_CMD[i].id  = id;
+            if (id > 10 && id < 14) temp_main_freeflow |= DEV_BIT(id);    // UVC 範圍直接啟動 UVC
+            channel7_CMD[i].pulse_add_time = (val > ADD_MAX) ? ADD_MAX : val;   // 防止軟體給到太大的數值
+            if (id < 10) pump0_9count++;            // 計算有幾個 slot
+        }
+        sort_by_speed(channel7_CMD, RxBuffer[4]);   // 小的 ID 在前面
+    } else {
+        // 數值設定為 00 則表示要做 delay 關水:清空 slot 資料
+        for (uint8_t i = 0; i < 10; i++) {
+            channel7_CMD[i].acc = 0;
+            channel7_CMD[i].mSec_100count = 0;
+            channel7_CMD[i].pulse_add_time = 0;
+        }
+        handleSW(2, 0x1C7FFUL);                     // 關閉前面的 10 個 slot 與 3 個 relay + 水泵
+    }
+    handleSW(1, temp_main_freeflow);                // 開啟 UVC(N = 0 時為上一包的,同 K2)
+    handleSW(1, PulseStart);                        // 做 Start 的動作,直接開啟出水
+    return 1;
 }
 
 /* ⚠ K1 自訂(K2 沒有,討論稿 3.6):SUB 00 = Status、01 = 實際腳位,皆一次回全部 ID;其他 SUB 填 FF */
@@ -304,7 +352,10 @@ static void Ur1_Rx_main(void)
             case PING:           PING_CMD();         break;
             /* 〔P3〕原為 case SET_PULSE: 與 LONG_PRESSURE 同樣暫回 PING 內容;〔P4〕實作 */
             case SET_PULSE:      SET_PULSE_CMD();    break;
-            case LONG_PRESSURE:  PING_CMD(); tx_cs = 8; break;      // 〔P1 暫時〕P5 實作前回 PING 內容(9 byte)
+            /* 〔P1 暫時〕P5 實作前回 PING 內容(9 byte):
+            case LONG_PRESSURE:  PING_CMD(); tx_cs = 8; break;
+             */
+            case LONG_PRESSURE:  if (!LONG_PRESSURE_CMD()) tx_cs = 8; break;   // 〔P5〕不支援的 Type 回 9 byte
             case ERROR_REPORT:                                       // ⚠ K1 不支援(討論稿 3.7):回 9 byte
             case MAX30102_QUERY:
             case WATER_MODE:
