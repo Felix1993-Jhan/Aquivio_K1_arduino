@@ -4,8 +4,8 @@
 #include "tick.h"
 #include "diagnostics.h"   // diag_tick_1ms
 #include "flowmeter.h"     // 〔步驟 3〕flow_isr_1ms
-#include "dispense.h"      // 〔步驟 5〕dispense_tick_1ms
 #include "pressure.h"      // 〔步驟 6〕pressure_tick_1ms
+#include "uart_cmd.h"      // 〔K2 移植 P1〕uart_tick_1ms
 
 static volatile uint16_t tick_cnt = 0;   // 只有 ISR 寫
 static uint16_t tick_done = 0;           // 只有主迴圈寫
@@ -45,9 +45,9 @@ uint16_t tick_get(void)
 /* 每 1 ms 的工作:依序呼叫各模組(之後的步驟在這裡加) */
 static void tick_main(void)
 {
-    diag_tick_1ms();       // 記憶體檢查 / mcuAlive 週期
+    diag_tick_1ms();       // D23 心跳
     // 〔步驟 3〕流量計 debounce 在 ISR(flow_isr_1ms),這裡不需要
-    dispense_tick_1ms();   // 〔步驟 5〕出杯狀態機(slot 倒數、到量 / 最短時間、逾時、Progress)
+    uart_tick_1ms();       // 〔K2 移植 P1〕收包逾時倒數(K2 在 TIM1 中斷內)
     pressure_tick_1ms();   // 〔步驟 6〕水壓:每 200 ms 啟動一次 ADC 轉換,完成後存進 last_raw
 }
 

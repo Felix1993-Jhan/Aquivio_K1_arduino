@@ -1,206 +1,125 @@
 #include <Arduino.h>
 #include "uart_cmd.h"
-#include "pins.h"          // slotCount、pin_write、ID_SLOT1
-#include "device.h"        // pump_water
-#include "dispense.h"      // execute_actions、〔步驟 5〕dispense_busy / abort / stop_slot
-#include "tx_queue.h"      // 〔步驟 2c〕輸出改走 out(TX 佇列),格式不變
-#include "pressure.h"      // 〔步驟 6〕pressure_raw / pressure_valid
+#include "tx_queue.h"      // 回覆走 out(TX 佇列)
 
-/* 〔2026-11-06〕命令長度上限 200 → 256:上位機 10 個 slot 全開、每個帶 2 位小數(例 "120000.99")
- * 再加 time 時最長約 230 字元,超過舊上限 199 → 整筆被丟棄(舊版 mcu31v2 則永久卡死)。
- * 改 256 可收 255 字元,涵蓋最壞情況(slot 受 120 秒逾時限制,最多 6 位整數)。舊值保留供對照:
-#define MAX_INPUT_LENGTH 200
-*/
-#define MAX_INPUT_LENGTH 256
-static char inputString[MAX_INPUT_LENGTH];   // 一筆命令(不含 '#'),最多 255 字元 + '\0'
-static unsigned int inputLength = 0;
-static bool inputOverflow = false;           // 〔步驟 4a〕這一筆超長 → 丟棄到下一個 '#'
-/* 〔步驟 4a〕不再需要「收完一整批」旗標。舊變數保留供對照:
-boolean stringComplete = false;
-*/
+/* 緩衝大小:K2 為 256(DATA_SIZE)。K1 SRAM 只有 8 KB,改 64:
+ * 最長的 0x07 LONG_PRESSURE = 7 + 3N byte,N ≤ 19 時 ≤ 64 */
+#define DATA_SIZE  64
 
-void uart_cmd_init(void) {
-    memset(inputString, 0, MAX_INPUT_LENGTH);  // Initialize inputString with null terminators
+static uint8_t  RxBuffer[DATA_SIZE];
+static uint8_t  TxBuffer[DATA_SIZE];
+static uint16_t RxIndex = 0;
+static uint16_t ur1Rx_Lenght = 8;          // CS 所在 index(總長 = ur1Rx_Lenght + 1),沿用 K2 名稱與慣例
+static uint8_t  UartCounter1ms = 0;        // 只在主迴圈存取(tick_main / cmd_poll)→ 不需原子保護
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  底層工具 — Checksum 驗證 / 產生(照搬 K2 checkCommand / createCS)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+// 前三個為確認功能站號之類的碼,再將最後面的 CS 加進來,確認傳送的碼是否正常
+static int checkCommand(void)
+{
+    int i, cs;
+    if ((RxBuffer[0] == 0x40) && (RxBuffer[1] == 0x71) && (RxBuffer[2] == 0x30)) {
+        cs = 0;
+        for (i = 0; i < (ur1Rx_Lenght + 1); i++) cs += RxBuffer[i];
+        return (((cs & 0xff) == 0) ? 1 : 0);
+    }
+    return 0;
 }
 
-/* ══════════════════════════════════════════════════════════
- *  ▌ 區塊 2  命令下達(原 loop() 中段的判斷,內容不變;〔步驟 4a〕抽成函式)
- * ══════════════════════════════════════════════════════════ */
-
-static void process_command(char* cmd) {
-    if (strcmp(cmd, "ping") != 0) {
-        out.println(cmd);
-    }
-
-    // Processing commands
-    if (strcmp(cmd, "ping") == 0) {
-        out.println("pong\n");
-    } else if (strcmp(cmd, "startcoldwater") == 0) {
-        pump_water(1, 0);
-    } else if (strcmp(cmd, "startwarmwater") == 0) {
-        pump_water(1, 1);
-    } else if (strcmp(cmd, "pressure") == 0) {
-        // 〔步驟 6〕回最近一次的 ADC 原始值 0~1023(每 200 ms 更新;不在這裡啟動轉換,不會讀到轉換中的值)
-        //          開機後尚未取得第一筆 → pressure:null
-        out.print("pressure:");
-        if (pressure_valid()) out.println(pressure_raw());
-        else                  out.println("null");
-    } else if (strcmp(cmd, "stop") == 0) {
-        pump_water(0, 0);
-        for (int i = 0; i < slotCount; i++) {
-            pin_write(ID_SLOT1 + i, 0);
-        }
-    } else {
-        boolean slotCommandProcessed = false;
-
-        // Check for start slot commands
-        for (int i = 0; i < slotCount; i++) {
-            char command[15];
-            sprintf(command, "startslot%d", i + 1);
-            if (strcmp(cmd, command) == 0) {
-                pin_write(ID_SLOT1 + i, 1);
-                slotCommandProcessed = true;
-                break;
-            }
-        }
-
-        // Check for stop slot commands
-        for (int i = 0; i < slotCount; i++) {
-            char command[15];
-            sprintf(command, "stopslot%d", i + 1);
-            if (strcmp(cmd, command) == 0) {
-                pin_write(ID_SLOT1 + i, 0);
-                slotCommandProcessed = true;
-                break;
-            }
-        }
-
-        // If no slot commands processed, check other actions
-        if (!slotCommandProcessed) {
-            execute_actions(cmd);
-        }
-    }
+// 最後的 CS 是全部加起來後需要等於 0 的一個數
+static void createCS(void)
+{
+    uint16_t i;
+    uint8_t  cs = 0;
+    for (i = 0; i < ur1Rx_Lenght; i++) cs += TxBuffer[i];
+    TxBuffer[ur1Rx_Lenght] = -cs;
 }
 
-/* ══════════════════════════════════════════════════════════
- *  ▌ 區塊 3  出杯中的命令(〔步驟 5〕架構計畫 5.3、9.1 #18)
- *   出杯不再阻塞 → 出杯中也會收到命令:
- *     stop       立刻收尾(印 finish / end)
- *     stopslotN  立刻關該 slot(尚未開的取消不開)〔停止類,上位機若送就執行;需要討論〕
- *     pressure   〔步驟 6〕立刻回覆(只讀值,不影響出杯;使用者 2026-11-09 決定 P4)
- *     其他        (ping、startslotN、startcoldwater、新 JSON…)暫存,end 之後依序執行(同舊版)
- *   出料的配置在下單時就已決定,出杯中只需即時處理停止類命令(使用者 2026-11-06)
- * ══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+ *  逐 byte 拼組封包(K2 HAL_UART_RxCpltCallback 的內容,去掉 RX_OK 與 HAL 呼叫)
+ * ═══════════════════════════════════════════════════════════════════════ */
+static const uint8_t HEADER[3] = { 0x40, 0x71, 0x30 };
 
-#define DEFER_LENGTH 256
-static char     deferred[DEFER_LENGTH];      // 暫存的命令,以 '#' 分隔(例 "ping#startslot3#")
-static uint16_t deferLen = 0;
+static void rx_byte(uint8_t b)
+{
+    if (UartCounter1ms == 0) RxIndex = 0;                 // 上一包逾時未收完 → 從頭
 
-static void defer_command(const char* cmd) {
-    uint16_t n = strlen(cmd);
-    if (deferLen + n + 1 > DEFER_LENGTH) return;   // 滿了:丟棄這筆(舊版 RX 超過 60 byte 也會整個清掉)
-    memcpy(&deferred[deferLen], cmd, n);
-    deferLen += n;
-    deferred[deferLen++] = '#';
-}
-
-/* 出杯結束後依序執行暫存的命令;其中若有新的 JSON 又開始出杯,剩下的繼續等下一次 end */
-static void run_deferred(void) {
-    while (deferLen > 0 && !dispense_busy()) {
-        char* sep = (char*)memchr(deferred, '#', deferLen);
-        uint16_t n = (uint16_t)(sep - deferred);
-        *sep = '\0';
-        process_command(deferred);                      // JSON 解析會複製字串,處理完即可移除
-        memmove(deferred, deferred + n + 1, deferLen - n - 1);
-        deferLen -= n + 1;
-    }
-}
-
-static void handle_command(char* cmd) {
-    if (!dispense_busy()) {
-        process_command(cmd);
-        return;
-    }
-
-    if (strcmp(cmd, "stop") == 0) {
-        out.println(cmd);
-        dispense_abort();
-        return;
-    }
-    if (strcmp(cmd, "pressure") == 0) {   // 〔步驟 6〕出杯中也立刻回(回傳命令 + 值,同待機)
-        process_command(cmd);
-        return;
-    }
-    for (int i = 0; i < slotCount; i++) {
-        char command[15];
-        sprintf(command, "stopslot%d", i + 1);
-        if (strcmp(cmd, command) == 0) {
-            out.println(cmd);
-            dispense_stop_slot(i);
-            return;
-        }
-    }
-    defer_command(cmd);
-}
-
-/* ══════════════════════════════════════════════════════════
- *  ▌ 區塊 1  字串分析(〔步驟 4a〕逐 byte,架構計畫 5.4)
- *   讀到 '#' 就處理一筆(含回覆),再繼續讀下一個 byte → 多筆命令一筆一筆完成
- *   超過 255 字元(MAX_INPUT_LENGTH − 1):丟棄這一筆直到下一個 '#',之後自動恢復
- * ══════════════════════════════════════════════════════════ */
-
-void cmd_poll(void) {
-    run_deferred();                             // 〔步驟 5〕出杯結束後,先執行暫存的命令
-
-    while (Serial.available()) {
-        char inChar = (char)Serial.read();
-
-        if (inChar == '#') {
-            if (!inputOverflow) {
-                inputString[inputLength] = '\0';
-                // process_command(inputString);   // 出杯 JSON 會在這裡阻塞到 end(步驟 5 前)
-                handle_command(inputString);    // 〔步驟 5〕出杯中:停止類立刻處理,其他暫存(區塊 3)
-            }
-            inputLength = 0;
-            inputOverflow = false;
-        } else if (inputLength < MAX_INPUT_LENGTH - 1) {
-            inputString[inputLength++] = inChar;
+    /* 〔K1 改,與 K2 不同〕標頭改為逐 byte 檢查(使用者 2026-11-11 決定):
+     * K2 收滿 3 byte 才一次比對,不對就 3 byte 整組丟 → 前面多 1~2 byte 雜訊時,
+     * 真正的 40 71 也被一起丟掉,整包對不齊(要等 20 ms 逾時後的下一包才恢復)。
+     * 改為每收 1 byte 就比對該位置;不對就丟掉,但若這個 byte 是 0x40,當成新封包第 1 byte。
+     * 標頭之後的雜訊仍由 CS 擋下。K2 原寫法保留於下方註解。 */
+    if (RxIndex < 3 && b != HEADER[RxIndex]) {
+        if (b == HEADER[0]) {                              // 例:40 40 71 30 …、40 71 40 71 30 …
+            RxBuffer[0] = b;
+            RxIndex = 1;
+            UartCounter1ms = UART_RX_TIMEOUT;
         } else {
-            inputOverflow = true;               // 超長:這一筆作廢,等下一個 '#'
+            RxIndex = 0;
+        }
+        return;
+    }
+
+    if (RxIndex == 0) UartCounter1ms = UART_RX_TIMEOUT;    // 第 1 byte:重設逾時
+    if (RxIndex >= DATA_SIZE) {                            // 防止溢位
+        RxIndex = 0;
+        UartCounter1ms = UART_RX_TIMEOUT;
+    }
+    RxBuffer[RxIndex++] = b;
+
+    /* K2 原寫法(收滿 3 byte 才比對,不對整組丟):
+    if (RxIndex == 3) {
+        // 讀完三個 byte 判斷是不是開頭確認碼,不是的話從頭開始讀
+        if ((RxBuffer[0] != 0x40) || (RxBuffer[1] != 0x71) || (RxBuffer[2] != 0x30)) {
+            RxIndex = 0;
+            UartCounter1ms = UART_RX_TIMEOUT;
         }
     }
+    */
+    /* 〔P1〕固定 9 byte(ur1Rx_Lenght = 8)。K2 在 RxIndex == 5 時查 cmd_len_table 決定長度,
+     * 查不到的 CMD 丟棄重收;變長命令(0x07、0x08)實作時再移植 */
 }
 
-/* ══════════════════════════════════════════════════════════
- *  〔步驟 4a〕以下為被取代的舊寫法,保留供對照。
- *  換掉原因(架構計畫 5.4):
- *   1. 緩衝滿 199 byte 後 '#' 存不進去,但 stringComplete 已設 → 永久不清緩衝,
- *      連 stop# 都收不到,看門狗照餵所以不會重置
- *   2. 一次讀到多筆(ping#stop#)會整串當 JSON,解析失敗後全部遺失
- *  換成:cmd_poll() 逐 byte 解析,讀到 '#' 就處理一筆
- * ══════════════════════════════════════════════════════════
-void serialEvent() {
+/* ═══════════════════════════════════════════════════════════════════════
+ *  主分派(K2 Ur1_Rx_main):收滿一包 → 驗證 CS → 依 CMD 處理 → 產生 CS → 回覆
+ * ═══════════════════════════════════════════════════════════════════════ */
+static void Ur1_Rx_main(void)
+{
+    int i_ur1;
+    for (i_ur1 = 0; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = RxBuffer[i_ur1];
+
+    if (checkCommand()) {
+        /* 〔P1〕任何 CMD 都回 PING 內容(K2 PING_CMD);各命令實作後改為 switch (RxBuffer[3]) 分派 */
+        TxBuffer[4] = VERSION0;
+        TxBuffer[5] = VERSION1;
+        TxBuffer[6] = VERSION2;
+        TxBuffer[7] = VERSION3;
+    } else {
+        for (i_ur1 = 4; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = 0xff;
+    }
+    createCS();
+    out.write(TxBuffer, ur1Rx_Lenght + 1);
+    RxIndex = 0;
+}
+
+void uart_cmd_init(void)
+{
+    RxIndex = 0;
+    ur1Rx_Lenght = 8;
+    UartCounter1ms = 0;
+}
+
+void uart_tick_1ms(void)
+{
+    if (UartCounter1ms != 0) UartCounter1ms--;
+}
+
+void cmd_poll(void)
+{
     while (Serial.available()) {
-        char inChar = (char)Serial.read();
-
-        if (inputLength < MAX_INPUT_LENGTH - 1) {  // Save space for null terminator
-            inputString[inputLength++] = inChar;
-        }
-
-        if (inChar == '#') {
-            stringComplete = true;
-        }
+        rx_byte((uint8_t)Serial.read());
+        if (RxIndex > ur1Rx_Lenght) Ur1_Rx_main();         // 收滿一包:當場處理,下一包的 byte 留在緩衝
     }
 }
-
-void cmd_poll(void) {
-    if (stringComplete) {
-        if (inputLength > 0 && inputString[inputLength - 1] == '#') {
-            inputString[inputLength - 1] = '\0';  // Replace '#' with null terminator
-            ...(判斷內容同上方 process_command)...
-            inputLength = 0;  // Reset input length
-            stringComplete = false;
-        }
-    }
-}
-*/
