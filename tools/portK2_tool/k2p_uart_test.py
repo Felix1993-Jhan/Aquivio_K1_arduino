@@ -4,8 +4,9 @@
 每項印出 TX / 預期 / RX(hex)與結果。只走序列埠收發,不會讓泵 / 閥動作。
 
 適用韌體:main-k2port-v4 P1 起(正式 / 除錯版皆可,115200)
-最後驗證:P1,12 / 12 PASS(2026-11-11)
-注意:T2、T3 的預期是 P1 的暫時行為(任何 CMD 都回 PING 內容);
+最後驗證:P2,12 / 12 PASS(2026-11-11)
+P2 起:T2 改用未實作的 0x03;T7、T9 的 0x01 / 0x02 改為回原封包(舊判斷註解保留)
+注意:T2、T3 的預期是 P1 的暫時行為(未實作的 CMD 都回 PING 內容);
       各命令實作後要改預期(舊判斷用註解保留),未知 CMD 屆時改為不回(同 K2 查表)。"""
 import argparse, time, serial
 
@@ -61,19 +62,27 @@ def main():
     bad = bytearray(pkt(0x05)); bad[-1] ^= 0x01
     tests = [
         ('T1 PING 0x05', [(pkt(0x05), 0)], reply(0x05, VER)),
-        ('T2 其他 CMD 0x01(P1:回 PING 內容)', [(pkt(0x01), 0)], reply(0x01, VER)),
+        # 〔P2〕0x01 已實作(回原封包),T2 改用仍未實作的 0x03。P1 原判斷:
+        # ('T2 其他 CMD 0x01(P1:回 PING 內容)', [(pkt(0x01), 0)], reply(0x01, VER)),
+        ('T2 未實作 CMD 0x03(P1 暫時:回 PING 內容)', [(pkt(0x03), 0)], reply(0x03, VER)),
         ('T3 未知 CMD 0x99(P1:也回;K2 不回)', [(pkt(0x99), 0)], reply(0x99, VER)),
         ('T4 CS 錯誤 → [4..7] 填 FF', [(bytes(bad), 0)], reply(0x05, [0xFF] * 4)),
         ('T5 標頭錯誤 41 71 30 → 不回', [(bytes([0x41, 0x71, 0x30, 0x05, 0, 0, 0, 0, 0]), 0)], b''),
         ('T6 半包 5 byte,等 50 ms 逾時,再送完整 PING → 只回一包',
          [(pkt(0x05)[:5], 0.05), (pkt(0x05), 0)], reply(0x05, VER)),
-        ('T7 兩包連在一起送 → 回兩包',
-         [(pkt(0x05) + pkt(0x02), 0)], reply(0x05, VER) + reply(0x02, VER)),
+        # 〔P2〕0x02 已實作:回原封包(遮罩 0 → 不動作)。P1 原判斷:
+        # ('T7 兩包連在一起送 → 回兩包',
+        #  [(pkt(0x05) + pkt(0x02), 0)], reply(0x05, VER) + reply(0x02, VER)),
+        ('T7 兩包連在一起送(PING + 0x02 遮罩 0)→ 回兩包',
+         [(pkt(0x05) + pkt(0x02), 0)], reply(0x05, VER) + pkt(0x02)),
         # 〔2026-11-11〕標頭改逐 byte 檢查(與 K2 不同):前面有雜訊也能收到
         ('T8 前面 1 byte 雜訊 11 + PING → 回 PING',
          [(bytes([0x11]) + pkt(0x05), 0)], reply(0x05, VER)),
-        ('T9 前面 2 byte 雜訊 11 22 + CMD 0x01 → 回 0x01',
-         [(bytes([0x11, 0x22]) + pkt(0x01), 0)], reply(0x01, VER)),
+        # 〔P2〕0x01 已實作:回原封包(遮罩 0 → 不動作)。P1 原判斷:
+        # ('T9 前面 2 byte 雜訊 11 22 + CMD 0x01 → 回 0x01',
+        #  [(bytes([0x11, 0x22]) + pkt(0x01), 0)], reply(0x01, VER)),
+        ('T9 前面 2 byte 雜訊 11 22 + 0x01 遮罩 0 → 回原封包',
+         [(bytes([0x11, 0x22]) + pkt(0x01), 0)], pkt(0x01)),
         ('T10 重複的 40:40 + PING → 回 PING',
          [(bytes([0x40]) + pkt(0x05), 0)], reply(0x05, VER)),
         ('T11 標頭斷在一半:40 71 11 + PING → 回 PING',

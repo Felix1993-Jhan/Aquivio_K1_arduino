@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "uart_cmd.h"
 #include "tx_queue.h"      // 回覆走 out(TX 佇列)
+#include "device_ctrl.h"   // 〔P2〕handleSW、Status、Counter1ms
 
 /* 緩衝大小:K2 為 256(DATA_SIZE)。K1 SRAM 只有 8 KB,改 64:
  * 最長的 0x07 LONG_PRESSURE = 7 + 3N byte,N ≤ 19 時 ≤ 64 */
@@ -83,6 +84,62 @@ static void rx_byte(uint8_t b)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  CMD Handlers(K2 區塊 4)。0x00~0x02 的回覆 = 原封包(handler 不改 TxBuffer,同 K2)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+// [4..7] → 32-bit(LE)。⚠ 先轉 uint32_t 再移位:AVR 的 int 只有 16-bit,K2 原式直接 << 24 會溢位
+static uint32_t rx_u32(void)
+{
+    return ((uint32_t)RxBuffer[7] << 24) | ((uint32_t)RxBuffer[6] << 16) |
+           ((uint32_t)RxBuffer[5] << 8)  |  (uint32_t)RxBuffer[4];
+}
+
+static void tx_u32(uint32_t v)
+{
+    TxBuffer[4] = (uint8_t)v;
+    TxBuffer[5] = (uint8_t)(v >> 8);
+    TxBuffer[6] = (uint8_t)(v >> 16);
+    TxBuffer[7] = (uint8_t)(v >> 24);
+}
+
+static void SWITCH_SET_CMD(void)
+{
+    if (isDeviceID(RxBuffer[4])) {      // 先判別是不是輸出裝置(K1 沒有實體的也算,Status 照翻)
+        handleSW(0, RxBuffer[4]);
+        // 資料 7 6 5 組成 24-bit 時間(ms);0 = 不自動關(同 K2)
+        Counter1ms[RxBuffer[4]] = ((uint32_t)RxBuffer[7] << 16) | ((uint32_t)RxBuffer[6] << 8) | RxBuffer[5];
+        /* 不移植:PressPump_OnHostStart(0x0A 水桶補壓)、ShortPulse_Register(0x08 異常偵測) */
+    }
+}
+
+static void SWITCH_START_CMD(void)
+{
+    handleSW(1, rx_u32());              // 4-byte 遮罩;不移植 PressPump_OnHostStart
+}
+
+static void SWITCH_STOP_CMD(void)
+{
+    /* K2:if(freeFlow_Run) freeflow_Reset();  → P5 freeflow 加入時補上 */
+    handleSW(2, rx_u32());              // 不移植 PressPump_OnHostStop
+}
+
+static void PING_CMD(void)
+{
+    TxBuffer[4] = VERSION0;
+    TxBuffer[5] = VERSION1;
+    TxBuffer[6] = VERSION2;
+    TxBuffer[7] = VERSION3;
+}
+
+/* ⚠ K1 自訂(K2 沒有,討論稿 3.6):SUB 00 = Status、01 = 實際腳位,皆一次回全部 ID;其他 SUB 填 FF */
+static void STATUS_QUERY_CMD(void)
+{
+    if      (RxBuffer[4] == 0x00) tx_u32(Status);
+    else if (RxBuffer[4] == 0x01) tx_u32(device_pin_readback());
+    else                          tx_u32(0xFFFFFFFFUL);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  主分派(K2 Ur1_Rx_main):收滿一包 → 驗證 CS → 依 CMD 處理 → 產生 CS → 回覆
  * ═══════════════════════════════════════════════════════════════════════ */
 static void Ur1_Rx_main(void)
@@ -91,11 +148,21 @@ static void Ur1_Rx_main(void)
     for (i_ur1 = 0; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = RxBuffer[i_ur1];
 
     if (checkCommand()) {
-        /* 〔P1〕任何 CMD 都回 PING 內容(K2 PING_CMD);各命令實作後改為 switch (RxBuffer[3]) 分派 */
+        /* 〔P1〕原為任何 CMD 都回 PING 內容;〔P2〕改為依 CMD 分派(同 K2),尚未實作的 CMD 維持 P1 行為。
+         * P1 寫法保留供對照:
         TxBuffer[4] = VERSION0;
         TxBuffer[5] = VERSION1;
         TxBuffer[6] = VERSION2;
         TxBuffer[7] = VERSION3;
+         */
+        switch (RxBuffer[3]) {
+            case SWITCH_SET:   SWITCH_SET_CMD();   break;
+            case SWITCH_START: SWITCH_START_CMD(); break;
+            case SWITCH_STOP:  SWITCH_STOP_CMD();  break;
+            case PING:         PING_CMD();         break;
+            case STATUS_QUERY: STATUS_QUERY_CMD(); break;   // ⚠ K1 自訂
+            default:           PING_CMD();         break;   // 〔P1 暫時〕未實作的 CMD 回 PING 內容
+        }
     } else {
         for (i_ur1 = 4; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = 0xff;
     }

@@ -6,6 +6,7 @@
 #include "flowmeter.h"     // 〔步驟 3〕flow_isr_1ms
 #include "pressure.h"      // 〔步驟 6〕pressure_tick_1ms
 #include "uart_cmd.h"      // 〔K2 移植 P1〕uart_tick_1ms
+#include "timer_task.h"    // 〔K2 移植 P2〕timer1_SET_Count、Tmr1_Interrupt_main
 
 static volatile uint16_t tick_cnt = 0;   // 只有 ISR 寫
 static uint16_t tick_done = 0;           // 只有主迴圈寫
@@ -48,6 +49,8 @@ static void tick_main(void)
     diag_tick_1ms();       // D23 心跳
     // 〔步驟 3〕流量計 debounce 在 ISR(flow_isr_1ms),這裡不需要
     uart_tick_1ms();       // 〔K2 移植 P1〕收包逾時倒數(K2 在 TIM1 中斷內)
+    timer1_SET_Count();    // 〔K2 移植 P2〕0x00 倒數(K2 在 TIM1 中斷內;方案 A 改在這裡)
+    Tmr1_Interrupt_main(); // 〔K2 移植 P2〕倒數到 0 的裝置關閉(K2 在主迴圈看 timer1_flag)
     pressure_tick_1ms();   // 〔步驟 6〕水壓:每 200 ms 啟動一次 ADC 轉換,完成後存進 last_raw
 }
 

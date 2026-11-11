@@ -7,6 +7,8 @@
  *    pins         腳位表、暫存器讀寫
  *    flowmeter    流量計脈衝計數(1 ms 取樣 debounce,移植自 K2)
  *    uart_cmd     K2 UART 協定:收包、CS 驗證、命令分派、回覆
+ *    device_ctrl  K2 裝置 ID 對照表(DeviceMap)、Status、handleSW
+ *    timer_task   0x00 倒數與到時關閉(K2 timer1_SET_Count / Tmr1_Interrupt_main)
  *    tx_queue     TX 發送佇列(⚠ K1 新增,非原 K2 架構)
  *    tick         1 ms 計時(Timer5)與每 1 ms 的工作分派
  *    diagnostics  看門狗、D23 心跳

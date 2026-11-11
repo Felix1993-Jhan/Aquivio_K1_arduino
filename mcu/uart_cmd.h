@@ -20,6 +20,8 @@
  *  〔P1〕只收 9 byte 固定長度;任何 CMD 收到且 CS 正確 → 回 PING 內容(版本 4 byte)
  *        40 71 30 [CMD] V0 V1 V2 V3 CS。CS 錯誤 → [4..7] 填 0xFF(同 K2)。
  *        各命令實作後逐一換成正式處理;長度查表(cmd_len_table)於變長命令實作時加入。
+ *  〔P2〕0x00 / 0x01 / 0x02 照搬 K2(回覆 = 原封包);0x05 PING;0xB5 狀態查詢(K1 自訂)。
+ *        其他 CMD 仍為 P1 暫時行為。
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #include <stdint.h>
@@ -30,6 +32,13 @@
 #define VERSION1   0x04
 #define VERSION2   0x00
 #define VERSION3   0x00
+
+/* 命令碼(同 K2 Core/Inc/main.h) */
+#define SWITCH_SET       0x00
+#define SWITCH_START     0x01
+#define SWITCH_STOP      0x02
+#define PING             0x05
+#define STATUS_QUERY     0xB5   // ⚠ K1 自訂,K2 沒有(討論稿 3.6):SUB 00 = Status、01 = 實際腳位
 
 #define UART_BAUD        115200
 #define UART_RX_TIMEOUT  20     // ms:一包從第 1 byte 起 20 ms 內沒收完 → 丟棄重收(同 K2)
