@@ -26,8 +26,13 @@ const pin_def_t PinMap[PIN_COUNT] = {
     { &PINH, _BV(PH3), PIN_OUT,       0 },   // slot8       D6
     { &PINE, _BV(PE3), PIN_OUT,       0 },   // slot9       D5
     { &PING, _BV(PG5), PIN_OUT,       0 },   // slot10      D4
+    /* 〔2026-11-10 腳位修正〕watervalve / bevvalve 改為 K1 轉接板實際接線 A11 / A12(使用者確認);
+     * 原 main31 / mcu31v2 的 D17 / D18 在轉接板上沒有接東西。舊定義保留供對照:
     { &PINH, _BV(PH0), PIN_OUT,       0 },   // watervalve  D17
     { &PIND, _BV(PD3), PIN_OUT,       0 },   // bevvalve    D18(只在開機拉低,之後未使用)
+     */
+    { &PINK, _BV(PK3), PIN_OUT,       0 },   // watervalve  A11(D65)一般輸出,開機拉低,不與出水連動(見 device.cpp)
+    { &PINK, _BV(PK4), PIN_OUT,       0 },   // bevvalve    A12(D66)開機拉低,之後未使用
     { &PINK, _BV(PK5), PIN_OUT,       0 },   // waterpump   A13
     { &PINK, _BV(PK6), PIN_OUT,       0 },   // warmvalve   A14
     { &PINK, _BV(PK7), PIN_OUT,       0 },   // coldvalve   A15
@@ -41,6 +46,10 @@ const pin_def_t PinMap[PIN_COUNT] = {
     /* 〔新增 2026-11-09〕heartbeat D23:空腳,當板子心跳(使用者指定)。由主迴圈 diag_tick_1ms() 每 1 秒翻轉
      * → 主迴圈卡住時就停止翻轉。正式版、除錯版皆有(原 D23 的除錯用模擬流量計移到 D22) */
     { &PINA, _BV(PA1), PIN_OUT,       0 },   // heartbeat   D23
+    /* 〔新增 2026-11-10〕carbonated / spout:K1 轉接板實際有接(公司倉 wistron-test / led-test 有定義,
+     * main31 / mcu31v2 沒有設定 → 原為浮接輸入)。改為開機拉低,之後未使用;K2 移植版對應 ID12(UVC1)/ ID13(UVC2) */
+    { &PINK, _BV(PK1), PIN_OUT,       0 },   // carbonated  A9(D63)
+    { &PINK, _BV(PK2), PIN_OUT,       0 },   // spout       A10(D64)
 };
 
 /* 初始化所有腳位:取代 setup() 內的 pinMode / digitalWrite(LOW)

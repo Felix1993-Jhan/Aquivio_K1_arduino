@@ -14,7 +14,11 @@ double warmWaterUsage = 0;
 bool isMeasuring = false;   // 原程式宣告但未使用,原樣保留
 
 void pump_water(int state, int water_temp) {
+    /* 〔2026-11-10 腳位修正〕watervalve 移到實際接線 A11 後不再與出水連動(使用者決定:K1 上這顆沒有使用,
+     * 設為一般輸出、開機拉低)。原 main31 / mcu31v2 驅動的 D17 沒接東西,機台實際上從未打開過它,
+     * 不連動 = 維持機台現有行為。舊程式保留供對照:
     pin_write(ID_WATERVALVE, state == 1);
+     */
 
     if (state == 1) {
         pin_write(ID_WATERPUMP, 1);

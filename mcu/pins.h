@@ -6,7 +6,8 @@
  * ═══════════════════════════════════════════════════════════════════════
  *
  *  ▸ PinMap[] — 一張表定義所有腳位(port、方向、初始準位),索引 = ID_xxx
- *      對照來源:專案根目錄 CLAUDE.md 腳位表(main-v4,沿用 main31)
+ *      對照來源:專案根目錄 CLAUDE.md 腳位表(main-v4,沿用 main31;
+ *      watervalve / bevvalve / carbonated / spout 依 K1 轉接板實際接線,2026-11-10 修正)
  *  ▸ 只存 PINx 指標:AVR 每個 port 的 PINx / DDRx / PORTx 位址連續,
  *      DDRx = PINx + 1、PORTx = PINx + 2(A~L 皆同)
  *  ▸ 取代 Arduino 的 pinMode / digitalWrite / digitalRead
@@ -43,6 +44,8 @@ enum {
     ID_FLOWMETER,
     ID_PRESSURE,      // 〔新增 2026-11-06〕A1:水壓感測器 ADC(步驟 6 起);原 K1 程式沒有
     ID_HEARTBEAT,     // 〔新增 2026-11-09〕D23:板子心跳,每 1 秒翻轉(0.5 Hz);原 K1 程式沒有
+    ID_CARBONATED,    // 〔新增 2026-11-10〕A9:轉接板實際有接,開機拉低,未使用;原 K1(main31)沒有設定
+    ID_SPOUT,         // 〔新增 2026-11-10〕A10:同上
     PIN_COUNT
 };
 static_assert(ID_SLOT10 - ID_SLOT1 == 9, "slot ID 必須連續");
