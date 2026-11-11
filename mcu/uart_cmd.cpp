@@ -2,6 +2,7 @@
 #include "uart_cmd.h"
 #include "tx_queue.h"      // 回覆走 out(TX 佇列)
 #include "device_ctrl.h"   // 〔P2〕handleSW、Status、Counter1ms
+#include "flowmeter.h"     // 〔P3〕flow_get、flow_take
 
 /* 緩衝大小:K2 為 256(DATA_SIZE)。K1 SRAM 只有 8 KB,改 64:
  * 最長的 0x07 LONG_PRESSURE = 7 + 3N byte,N ≤ 19 時 ≤ 64 */
@@ -30,12 +31,71 @@ static int checkCommand(void)
 }
 
 // 最後的 CS 是全部加起來後需要等於 0 的一個數
+/* 〔P3〕加參數 cs_idx(回覆的 CS 位置):K2 回覆長度一律 = 請求長度(ur1Rx_Lenght);
+ * K1 的不支援格式(3.7)固定 9 byte,與 0x08 請求的 7 / 16 byte 不同,所以分開。K2 原寫法:
 static void createCS(void)
 {
     uint16_t i;
     uint8_t  cs = 0;
     for (i = 0; i < ur1Rx_Lenght; i++) cs += TxBuffer[i];
     TxBuffer[ur1Rx_Lenght] = -cs;
+}
+ */
+static void createCS(uint16_t cs_idx)
+{
+    uint16_t i;
+    uint8_t  cs = 0;
+    for (i = 0; i < cs_idx; i++) cs += TxBuffer[i];
+    TxBuffer[cs_idx] = -cs;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  cmd_id 長度計算 — 查表驅動(〔P3〕照搬 K2 cmd_len_table + lookup_cmd_len)
+ *  回傳 = ur1Rx_Lenght(CS 所在 index,總長 = +1)
+ * ═══════════════════════════════════════════════════════════════════════ */
+typedef uint8_t (*len_calc_fn)(uint8_t sub);
+
+// 一般命令:固定 9 bytes 含 CS
+static uint8_t fixed_9(uint8_t sub) { (void)sub; return 8; }
+
+// LONG_PRESSURE (0x07):sub 是裝置數量,每裝置 3 bytes(id + val_lo + val_hi)
+static uint8_t long_pressure_len(uint8_t sub) { return 6 + (sub * 3); }
+
+// ERROR_REPORT (0x08):只有 SET (sub=0x01) 是 16 bytes,其他 sub 都 7 bytes
+static uint8_t error_report_len(uint8_t sub) { return (sub == 0x01) ? 15 : 6; }
+
+typedef struct {
+    uint8_t     cmd_id;
+    len_calc_fn calc;
+} cmd_len_entry_t;
+
+static const cmd_len_entry_t cmd_len_table[] = {
+    { SWITCH_SET,     fixed_9            },   // 0x00
+    { SWITCH_START,   fixed_9            },   // 0x01
+    { SWITCH_STOP,    fixed_9            },   // 0x02
+    { SENSOR_READ,    fixed_9            },   // 0x03
+    { SENSOR_CLEAR,   fixed_9            },   // 0x04
+    { PING,           fixed_9            },   // 0x05
+    { SET_PULSE,      fixed_9            },   // 0x06
+    { LONG_PRESSURE,  long_pressure_len  },   // 0x07 依裝置數變長
+    { ERROR_REPORT,   error_report_len   },   // 0x08 依 sub-command 分兩種(K1 不支援,仍需收完整包)
+    { MAX30102_QUERY, fixed_9            },   // 0x09
+    { WATER_MODE,     fixed_9            },   // 0x0A
+    { BOOTLOADER,     fixed_9            },   // 0xB0
+    { STATUS_QUERY,   fixed_9            },   // 0xB5 ⚠ K1 自訂
+};
+#define CMD_LEN_COUNT (sizeof(cmd_len_table) / sizeof(cmd_len_table[0]))
+
+// 查表:cmd_id 對到就填 out_len 回傳 1;找不到(未知命令)回 0
+static int lookup_cmd_len(uint8_t cmd_id, uint8_t sub, uint16_t *out_len)
+{
+    for (uint8_t i = 0; i < CMD_LEN_COUNT; i++) {
+        if (cmd_len_table[i].cmd_id == cmd_id) {
+            *out_len = cmd_len_table[i].calc(sub);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -79,8 +139,16 @@ static void rx_byte(uint8_t b)
         }
     }
     */
-    /* 〔P1〕固定 9 byte(ur1Rx_Lenght = 8)。K2 在 RxIndex == 5 時查 cmd_len_table 決定長度,
-     * 查不到的 CMD 丟棄重收;變長命令(0x07、0x08)實作時再移植 */
+    /* 〔P1〕原為固定 9 byte(ur1Rx_Lenght = 8);〔P3〕改為 K2 的查表決定長度 */
+    if (RxIndex == 5) {
+        if (!lookup_cmd_len(RxBuffer[3], RxBuffer[4], &ur1Rx_Lenght)
+            || ur1Rx_Lenght >= DATA_SIZE) {                // 〔K1 加〕超過緩衝(0x07 N ≥ 20)也丟棄
+            // 未知 cmd_id → 重新讀取(同 K2:不回覆)
+            RxIndex = 0;
+            ur1Rx_Lenght = 8;
+            UartCounter1ms = UART_RX_TIMEOUT;
+        }
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -131,6 +199,41 @@ static void PING_CMD(void)
     TxBuffer[7] = VERSION3;
 }
 
+/* K2 SENSOR_READ_CMD:[4] = ID echo,[5..7] = 讀值 24-bit LE。
+ * K1 只有 ID18 Flow;其他 ID(K2 的裝置電流、壓力、溫度、漏水、0xF0 板版、未定義)回不支援格式(討論稿 3.7) */
+static void SENSOR_READ_CMD(void)
+{
+    uint8_t id = RxBuffer[4];
+    TxBuffer[4] = id;
+    if (id == SENSOR_FLOW) {
+        uint32_t v = flow_get();            // K1 流量在 Timer5 ISR 計數,flow_get 為原子讀取
+        TxBuffer[5] = (uint8_t)v;
+        TxBuffer[6] = (uint8_t)(v >> 8);
+        TxBuffer[7] = (uint8_t)(v >> 16);   // 只回低 24 bit(同 K2)
+    } else {
+        TxBuffer[5] = 0xFF;
+        TxBuffer[6] = id;
+        TxBuffer[7] = 0xFF;
+    }
+}
+
+/* K2 SENSOR_CLEAR_CMD:只有 ID18 Flow 歸零,其他 ID 不動作;回覆 = 原封包(K2 也只清 Flow)
+ * 不移植 ErrorReport_ResetFlowSnapshot(異常偵測) */
+static void SENSOR_CLEAR_CMD(void)
+{
+    TxBuffer[4] = RxBuffer[4];
+    if (RxBuffer[4] == SENSOR_FLOW) (void)flow_take();   // 原子讀取並歸零
+}
+
+/* ⚠ K1 自訂(討論稿 3.7):K1 沒有的功能,回 9 byte:[4] = 代碼,[5..7] = FF 代碼 FF */
+static void UNSUPPORTED_CMD(uint8_t code)
+{
+    TxBuffer[4] = code;
+    TxBuffer[5] = 0xFF;
+    TxBuffer[6] = code;
+    TxBuffer[7] = 0xFF;
+}
+
 /* ⚠ K1 自訂(K2 沒有,討論稿 3.6):SUB 00 = Status、01 = 實際腳位,皆一次回全部 ID;其他 SUB 填 FF */
 static void STATUS_QUERY_CMD(void)
 {
@@ -145,6 +248,7 @@ static void STATUS_QUERY_CMD(void)
 static void Ur1_Rx_main(void)
 {
     int i_ur1;
+    uint16_t tx_cs = ur1Rx_Lenght;          // 〔P3〕回覆的 CS 位置:預設 = 請求長度(同 K2);9 byte 回覆設為 8
     for (i_ur1 = 0; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = RxBuffer[i_ur1];
 
     if (checkCommand()) {
@@ -156,18 +260,27 @@ static void Ur1_Rx_main(void)
         TxBuffer[7] = VERSION3;
          */
         switch (RxBuffer[3]) {
-            case SWITCH_SET:   SWITCH_SET_CMD();   break;
-            case SWITCH_START: SWITCH_START_CMD(); break;
-            case SWITCH_STOP:  SWITCH_STOP_CMD();  break;
-            case PING:         PING_CMD();         break;
-            case STATUS_QUERY: STATUS_QUERY_CMD(); break;   // ⚠ K1 自訂
-            default:           PING_CMD();         break;   // 〔P1 暫時〕未實作的 CMD 回 PING 內容
+            case SWITCH_SET:     SWITCH_SET_CMD();   break;
+            case SWITCH_START:   SWITCH_START_CMD(); break;
+            case SWITCH_STOP:    SWITCH_STOP_CMD();  break;
+            case SENSOR_READ:    SENSOR_READ_CMD();  break;
+            case SENSOR_CLEAR:   SENSOR_CLEAR_CMD(); break;
+            case PING:           PING_CMD();         break;
+            case SET_PULSE:                                          // 〔P1 暫時〕P4 實作前回 PING 內容
+            case LONG_PRESSURE:  PING_CMD(); tx_cs = 8; break;      // 〔P1 暫時〕P5 實作前回 PING 內容(9 byte)
+            case ERROR_REPORT:                                       // ⚠ K1 不支援(討論稿 3.7):回 9 byte
+            case MAX30102_QUERY:
+            case WATER_MODE:
+            case BOOTLOADER:     UNSUPPORTED_CMD(RxBuffer[3]); tx_cs = 8; break;
+            case STATUS_QUERY:   STATUS_QUERY_CMD(); break;          // ⚠ K1 自訂
+            /* 〔P2〕原 default: PING_CMD();(未實作的 CMD 回 PING 內容)。〔P3〕查不到長度表的 CMD
+             * 在 rx_byte 就丟棄(同 K2),不會進到這裡 */
         }
     } else {
         for (i_ur1 = 4; i_ur1 < ur1Rx_Lenght; i_ur1++) TxBuffer[i_ur1] = 0xff;
     }
-    createCS();
-    out.write(TxBuffer, ur1Rx_Lenght + 1);
+    createCS(tx_cs);
+    out.write(TxBuffer, tx_cs + 1);
     RxIndex = 0;
 }
 

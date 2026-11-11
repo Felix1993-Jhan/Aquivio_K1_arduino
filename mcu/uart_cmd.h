@@ -22,6 +22,9 @@
  *        各命令實作後逐一換成正式處理;長度查表(cmd_len_table)於變長命令實作時加入。
  *  〔P2〕0x00 / 0x01 / 0x02 照搬 K2(回覆 = 原封包);0x05 PING;0xB5 狀態查詢(K1 自訂)。
  *        其他 CMD 仍為 P1 暫時行為。
+ *  〔P3〕加入 K2 長度查表(查不到的 CMD 不回,同 K2);0x03 只有 ID18 Flow,其他 ID 回不支援格式;
+ *        0x04 只清 ID18;0x08 / 0x09 / 0x0A / 0xB0 回不支援格式 9 byte(⚠ K1 自訂,討論稿 3.7);
+ *        0x06 / 0x07 在 P4 / P5 前暫回 PING 內容。
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #include <stdint.h>
@@ -37,7 +40,17 @@
 #define SWITCH_SET       0x00
 #define SWITCH_START     0x01
 #define SWITCH_STOP      0x02
+#define SENSOR_READ      0x03
+#define SENSOR_CLEAR     0x04
 #define PING             0x05
+#define SET_PULSE        0x06
+#define LONG_PRESSURE    0x07
+#define ERROR_REPORT     0x08   // K1 不支援(回 9 byte 不支援格式)
+#define MAX30102_QUERY   0x09   // K1 不支援
+#define WATER_MODE       0x0A   // K1 不支援
+#define BOOTLOADER       0xB0   // K1 不支援
+
+#define SENSOR_FLOW      18     // 0x03 / 0x04 的 ID:流量計(K1 唯一能讀的感測器)
 #define STATUS_QUERY     0xB5   // ⚠ K1 自訂,K2 沒有(討論稿 3.6):SUB 00 = Status、01 = 實際腳位
 
 #define UART_BAUD        115200
