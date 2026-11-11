@@ -3,6 +3,7 @@
 #include "tx_queue.h"      // 回覆走 out(TX 佇列)
 #include "device_ctrl.h"   // 〔P2〕handleSW、Status、Counter1ms
 #include "flowmeter.h"     // 〔P3〕flow_get、flow_take
+#include "timer_task.h"    // 〔P4〕Pulse、PulseStart、PulseType、pulse_flow_clear
 
 /* 緩衝大小:K2 為 256(DATA_SIZE)。K1 SRAM 只有 8 KB,改 64:
  * 最長的 0x07 LONG_PRESSURE = 7 + 3N byte,N ≤ 19 時 ≤ 64 */
@@ -222,7 +223,42 @@ static void SENSOR_READ_CMD(void)
 static void SENSOR_CLEAR_CMD(void)
 {
     TxBuffer[4] = RxBuffer[4];
+    /* 〔P4〕改呼叫 pulse_flow_clear():歸零時同步 0x06 扣脈衝用的「上次」計數。P3 原寫法:
     if (RxBuffer[4] == SENSOR_FLOW) (void)flow_take();   // 原子讀取並歸零
+     */
+    if (RxBuffer[4] == SENSOR_FLOW) pulse_flow_clear();
+}
+
+/* K2 pulse_start_by_type():由 Type 決定該啟動哪些裝置
+ *   0 = 常溫水(水泵 ID10 + 常溫繼電器 ID14)、1 = 冷水(ID10 + 冷水繼電器 ID15)
+ *   K2 的 2 = 氣泡水(ID16)K1 沒有,由呼叫端回不支援格式 */
+static uint32_t pulse_start_by_type(uint8_t type)
+{
+    switch (type) {
+        case 0:  return DEV_BIT(10) | DEV_BIT(14);   // 常溫水
+        case 1:  return DEV_BIT(10) | DEV_BIT(15);   // 冷水
+        default: return 0;
+    }
+}
+
+/* K2 SET_PULSE_CMD:依流量脈衝數出水。[4] = Type、[5..7] = 脈衝數 24-bit LE;回覆 = 原封包,
+ * 脈衝扣到 0 時由 Tmr1_Interrupt_main 關閉並主動送完成通知。
+ * ⚠ K1:Type 2(氣泡水)及其他未定義 Type → 不支援格式 [Type] FF [Type] FF,不動作(討論稿 3.7)
+ * 不移植 PressPump_OnHostStart(水桶補壓) */
+static void SET_PULSE_CMD(void)
+{
+    uint8_t type = RxBuffer[4];
+    if (type > 1) {
+        TxBuffer[4] = type;
+        TxBuffer[5] = 0xFF;
+        TxBuffer[6] = type;
+        TxBuffer[7] = 0xFF;
+        return;
+    }
+    Pulse = ((uint32_t)RxBuffer[7] << 16) | ((uint32_t)RxBuffer[6] << 8) | RxBuffer[5];
+    PulseType = type;
+    PulseStart = pulse_start_by_type(type);
+    handleSW(1, PulseStart);            // 做 Start 的動作
 }
 
 /* ⚠ K1 自訂(討論稿 3.7):K1 沒有的功能,回 9 byte:[4] = 代碼,[5..7] = FF 代碼 FF */
@@ -266,7 +302,8 @@ static void Ur1_Rx_main(void)
             case SENSOR_READ:    SENSOR_READ_CMD();  break;
             case SENSOR_CLEAR:   SENSOR_CLEAR_CMD(); break;
             case PING:           PING_CMD();         break;
-            case SET_PULSE:                                          // 〔P1 暫時〕P4 實作前回 PING 內容
+            /* 〔P3〕原為 case SET_PULSE: 與 LONG_PRESSURE 同樣暫回 PING 內容;〔P4〕實作 */
+            case SET_PULSE:      SET_PULSE_CMD();    break;
             case LONG_PRESSURE:  PING_CMD(); tx_cs = 8; break;      // 〔P1 暫時〕P5 實作前回 PING 內容(9 byte)
             case ERROR_REPORT:                                       // ⚠ K1 不支援(討論稿 3.7):回 9 byte
             case MAX30102_QUERY:
@@ -282,6 +319,18 @@ static void Ur1_Rx_main(void)
     createCS(tx_cs);
     out.write(TxBuffer, tx_cs + 1);
     RxIndex = 0;
+}
+
+/* 〔P4〕0x06 完成通知(MCU 主動送):40 71 30 06 [Type] 01 00 00 CS(同 K2 Tmr1_Interrupt_main)
+ * ⚠ K1 修正:K2 用 createCS() 以「上一包請求的 ur1Rx_Lenght」算 CS 位置,上一包若是 0x07 / 0x08(非 9 byte)
+ *   CS 會算錯;K1 用獨立緩衝、固定 9 byte 計算。不動 TxBuffer,避免影響命令處理 */
+void uart_send_pulse_done(uint8_t type)
+{
+    uint8_t b[9] = { 0x40, 0x71, 0x30, SET_PULSE, type, 0x01, 0x00, 0x00, 0 };
+    uint8_t cs = 0;
+    for (uint8_t i = 0; i < 8; i++) cs += b[i];
+    b[8] = -cs;
+    out.write(b, 9);
 }
 
 void uart_cmd_init(void)

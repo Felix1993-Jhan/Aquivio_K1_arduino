@@ -6,9 +6,10 @@ K2 移植版改用 K2 UART 協定(`40 71 30` + CS、115200),上一層 `tools/` �
 
 | 腳本 | 測什麼 | 韌體 | 接線 | 適用起點 | 最後驗證 |
 |---|---|---|---|---|---|
-| `k2p_uart_test.py` | 收包:標頭逐 byte 檢查(雜訊、重複 `40`、標頭斷一半)、CS 錯誤回 FF、半包逾時、黏包、回覆格式 | 正式 / 除錯 | — | P1 | P3:12 / 12 PASS |
-| `k2p_device_test.py` | `0x00` / `0x01` / `0x02` 開關與定時關閉、K1 無實體 ID、感測器 ID 忽略、`0xB5` 狀態查詢(`Status` 與實際腳位比對);LED 步驟停留讓人看板子(`--hold`)。⚠ 輸出腳會動作 | 正式 / 除錯 | — | P2 | P2:71 / 71 PASS(`0x00` 1000 ms 實測 1012 ms,含序列埠往返);另逐一 ID 開關 3 輪各 26 / 26 PASS,使用者目視確認 LED 依 ID 順序亮 <br>P3:71 / 71 PASS(1014 ms) |
-| `k2p_sensor_test.py` | `0x03` 讀 Flow(ID18)與其他 ID 不支援格式、`0x04` 歸零、`0x08` / `0x09` / `0x0A` / `0xB0` 不支援格式、`0x08` / `0x07` 變長請求後對齊、`0x06` / `0x07` 暫回 PING | **除錯** | D22 → A8 | P3 | P3:43 / 43 PASS(水泵開 3 秒 = 19 pulse) |
+| `k2p_uart_test.py` | 收包:標頭逐 byte 檢查(雜訊、重複 `40`、標頭斷一半)、CS 錯誤回 FF、半包逾時、黏包、回覆格式 | 正式 / 除錯 | — | P1 | P4:12 / 12 PASS |
+| `k2p_device_test.py` | `0x00` / `0x01` / `0x02` 開關與定時關閉、K1 無實體 ID、感測器 ID 忽略、`0xB5` 狀態查詢(`Status` 與實際腳位比對);LED 步驟停留讓人看板子(`--hold`)。⚠ 輸出腳會動作 | 正式 / 除錯 | — | P2 | P2:71 / 71 PASS(`0x00` 1000 ms 實測 1012 ms,含序列埠往返);另逐一 ID 開關 3 輪各 26 / 26 PASS,使用者目視確認 LED 依 ID 順序亮 <br>P4:71 / 71 PASS |
+| `k2p_sensor_test.py` | `0x03` 讀 Flow(ID18)與其他 ID 不支援格式、`0x04` 歸零、`0x08` / `0x09` / `0x0A` / `0xB0` 不支援格式、`0x08` / `0x07` 變長請求後對齊、`0x07` 暫回 PING | **除錯** | D22 → A8 | P3 | P4:42 / 42 PASS(P3 為 43 項,`0x06` 移到 pulse_test) |
+| `k2p_pulse_test.py` | `0x06` SET_PULSE:冷水 / 常溫到量關閉與主動完成通知、時間與流量計數、不支援 Type、pulse 0 不自動停、出水中 `0x04` 歸零、`0x02` 提早停止;P7 重現殘留 Pulse 問題(K2 行為,討論稿 4.1) | **除錯** | D22 → A8 | P4 | P4:25 / 25 PASS(12 pulse = 1.82 秒;殘值 3.66 秒後自動關) |
 
 ## 執行
 
@@ -16,6 +17,7 @@ K2 移植版改用 K2 UART 協定(`40 71 30` + CS、115200),上一層 `tools/` �
 python -I -X utf8 tools/portK2_tool/k2p_uart_test.py --port COM28
 python -I -X utf8 tools/portK2_tool/k2p_device_test.py --port COM28 --hold 3   # 約 40 秒,看著板子 LED
 python -I -X utf8 tools/portK2_tool/k2p_sensor_test.py --port COM28              # 除錯版 + D22 → A8
+python -I -X utf8 tools/portK2_tool/k2p_pulse_test.py --port COM28               # 除錯版 + D22 → A8,約 30 秒
 ```
 
 開 port 時 Mega 會 auto-reset;本版開機不送 `ready`,腳本開 port 後固定等 2.5 秒再送。

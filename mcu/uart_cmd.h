@@ -25,6 +25,8 @@
  *  〔P3〕加入 K2 長度查表(查不到的 CMD 不回,同 K2);0x03 只有 ID18 Flow,其他 ID 回不支援格式;
  *        0x04 只清 ID18;0x08 / 0x09 / 0x0A / 0xB0 回不支援格式 9 byte(⚠ K1 自訂,討論稿 3.7);
  *        0x06 / 0x07 在 P4 / P5 前暫回 PING 內容。
+ *  〔P4〕0x06 SET_PULSE 照搬 K2(Type 0 常溫、1 冷水;2 以上回不支援格式);到量主動送完成通知。
+ *        0x07 在 P5 前仍暫回 PING 內容。
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #include <stdint.h>
@@ -59,5 +61,6 @@
 void uart_cmd_init(void);    // setup():清空接收狀態
 void uart_tick_1ms(void);    // tick_main() 每 1 ms 呼叫:收包逾時倒數
 void cmd_poll(void);         // loop():讀 RX,收滿一包就處理並回覆
+void uart_send_pulse_done(uint8_t type);   // 〔P4〕0x06 完成通知(Tmr1_Interrupt_main 呼叫)
 
 #endif

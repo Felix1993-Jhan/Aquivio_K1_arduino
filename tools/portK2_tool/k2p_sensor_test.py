@@ -7,7 +7,8 @@
   正式版或沒接線時 S3 會 FAIL(計數不增加)。只在空板上跑。
 
 適用韌體:main-k2port-v4 P3 起(除錯版,115200)
-最後驗證:P3,43 / 43 PASS(2026-11-11)"""
+最後驗證:P4,42 / 42 PASS(2026-11-11)
+P4 起:S7 的 0x06 項目移到 k2p_pulse_test.py(總項數 42)"""
 import argparse, time, serial
 
 HDR = [0x40, 0x71, 0x30]
@@ -116,8 +117,9 @@ def main():
     t.check('S6 0x0A 水桶模式', pkt(0x0A, 0x03), unsup(0x0A, 0x0A))
     t.check('S6 0xB0 Bootloader', pkt(0xB0), unsup(0xB0, 0xB0))
 
-    print('══ S7 尚未實作(P4 / P5 前暫回 PING 內容)══')
-    t.check('S7 0x06 SET_PULSE → PING 內容', pkt(0x06, 1, 10, 0, 0), pkt(0x06, *VER))
+    print('══ S7 尚未實作(P5 前暫回 PING 內容)══')
+    # 〔P4〕0x06 已實作(測試移到 k2p_pulse_test.py)。P3 原判斷:
+    # t.check('S7 0x06 SET_PULSE → PING 內容', pkt(0x06, 1, 10, 0, 0), pkt(0x06, *VER))
     lp = raw([0x07, 0x02, 0x00, 0x64, 0x00, 0x03, 0x32, 0x00, 0x01])   # N=2,13 byte
     t.check('S7 0x07 N=2(請求 13 byte)+ 緊接 PING → PING 內容 9 byte,兩包都對齊',
             lp + pkt(0x05), pkt(0x07, *VER) + pkt(0x05, *VER))

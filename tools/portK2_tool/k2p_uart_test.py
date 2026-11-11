@@ -4,10 +4,11 @@
 每項印出 TX / 預期 / RX(hex)與結果。只走序列埠收發,不會讓泵 / 閥動作。
 
 適用韌體:main-k2port-v4 P1 起(正式 / 除錯版皆可,115200)
-最後驗證:P3,12 / 12 PASS(2026-11-11)
+最後驗證:P4,12 / 12 PASS(2026-11-11)
 P2 起:T2 改用未實作的 0x03;T7、T9 的 0x01 / 0x02 改為回原封包(舊判斷註解保留)
 P3 起:T2 改用 0x06;T3 未知 CMD 改為不回(同 K2 查表)
-注意:T2 的預期是暫時行為(0x06 在 P4 前回 PING 內容),P4 後要改預期(舊判斷用註解保留)。"""
+P4 起:T2 改用 0x07 N=0
+注意:T2 的預期是暫時行為(0x07 在 P5 前回 PING 內容),P5 後要改預期(舊判斷用註解保留)。"""
 import argparse, time, serial
 
 HDR = [0x40, 0x71, 0x30]
@@ -67,7 +68,10 @@ def main():
         # 〔P3〕0x03 已實作,T2 改用 P4 前仍暫回 PING 的 0x06;0x99 查不到長度表 → 不回(同 K2)。P2 原判斷:
         # ('T2 未實作 CMD 0x03(P1 暫時:回 PING 內容)', [(pkt(0x03), 0)], reply(0x03, VER)),
         # ('T3 未知 CMD 0x99(P1:也回;K2 不回)', [(pkt(0x99), 0)], reply(0x99, VER)),
-        ('T2 未實作 CMD 0x06(P4 前暫時:回 PING 內容)', [(pkt(0x06), 0)], reply(0x06, VER)),
+        # 〔P4〕0x06 已實作(且 Type 0 / pulse 0 會開水泵不停),T2 改用 P5 前仍暫回 PING 的 0x07(N=0,7 byte)。P3 原判斷:
+        # ('T2 未實作 CMD 0x06(P4 前暫時:回 PING 內容)', [(pkt(0x06), 0)], reply(0x06, VER)),
+        ('T2 未實作 CMD 0x07 N=0(7 byte;P5 前暫時:回 PING 內容 9 byte)',
+         [(bytes(HDR + [0x07, 0x00, 0x00, cs(HDR + [0x07, 0x00, 0x00])]), 0)], reply(0x07, VER)),
         ('T3 未知 CMD 0x99 → 不回(同 K2);接著的 PING 照常回',
          [(pkt(0x99) + pkt(0x05), 0)], reply(0x05, VER)),
         ('T4 CS 錯誤 → [4..7] 填 FF', [(bytes(bad), 0)], reply(0x05, [0xFF] * 4)),
