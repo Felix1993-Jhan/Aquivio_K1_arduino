@@ -7,6 +7,7 @@
  *    device       驅動元件控制:水路、slot 開關
  *    flowmeter    流量計脈衝計數
  *    dispense     出杯流程(JSON 動作)
+ *    jsonfreeflow 〔2026-11-12〕freeflow(按住出水,slot 依流量開啟)
  *    uart_cmd     字串分析 + 命令下達
  *    tx_queue     字串回覆(TX 發送佇列,⚠ K1 新增)
  *    tick         1 ms 計時(Timer5)與每 1 ms 的工作分派

@@ -5,6 +5,7 @@
 #include "diagnostics.h"   // diag_tick_1ms
 #include "flowmeter.h"     // 〔步驟 3〕flow_isr_1ms
 #include "dispense.h"      // 〔步驟 5〕dispense_tick_1ms
+#include "jsonfreeflow.h"  // 〔2026-11-12〕jff_tick_1ms
 #include "pressure.h"      // 〔步驟 6〕pressure_tick_1ms
 
 static volatile uint16_t tick_cnt = 0;   // 只有 ISR 寫
@@ -46,8 +47,10 @@ uint16_t tick_get(void)
 static void tick_main(void)
 {
     diag_tick_1ms();       // 記憶體檢查 / mcuAlive 週期
+    diag_flow_mirror_1ms();   // 〔暫時〕D66 與流量計 A8 同步(看 LED);停用時註解掉這行
     // 〔步驟 3〕流量計 debounce 在 ISR(flow_isr_1ms),這裡不需要
     dispense_tick_1ms();   // 〔步驟 5〕出杯狀態機(slot 倒數、到量 / 最短時間、逾時、Progress)
+    jff_tick_1ms();        // 〔2026-11-12〕JSON freeflow:slot 依流量開關、每 200 ms 回報 pulse
     pressure_tick_1ms();   // 〔步驟 6〕水壓:每 200 ms 啟動一次 ADC 轉換,完成後存進 last_raw
 }
 

@@ -2,7 +2,7 @@
 
 適用韌體:步驟 4a(02c0475)起;T4 的 255 字元上限從 3627cb6 起(之前上限 199)
           正式版、除錯版皆可,不需接線
-最後驗證:d6ec6fa(步驟 5,正式版)全部 PASS
+最後驗證:jsonfreeflow(2026-11-12,除錯版)8 / 8 PASS
 
 用法(Git Bash):
     python -I -X utf8 tools/k1_cmd_parse_test.py --port COM28

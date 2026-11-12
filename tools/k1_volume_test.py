@@ -2,7 +2,7 @@
 
 適用韌體:H4(4fc8663)起;配比換算於 70a3760、slot 開啟順序與時間於 d6ec6fa 改為步驟 5 版
           除錯版 + 杜邦線 D22 → A8
-最後驗證:d6ec6fa(步驟 5,除錯版)seed 11 6 / 6 PASS
+最後驗證:jsonfreeflow(2026-11-12,除錯版)seed 11 6 / 6 PASS
 
 前提:
   - 燒錄除錯版:arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DK1_DEBUG_FLOW_GEN"

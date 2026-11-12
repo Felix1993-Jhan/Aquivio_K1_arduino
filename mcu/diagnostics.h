@@ -17,5 +17,6 @@ void checkMemory();           // 剩餘 SRAM 創新低或低於 100 byte 時印�
 void checkSerialBuffers();    // RX > 60 byte 清空(步驟 4 移除);〔步驟 2c〕TX flush 已移除
 void diag_tick_1ms(void);
 void diag_poll(void);
+void diag_flow_mirror_1ms(void);   // 〔暫時〕每 1 ms 由 tick_main() 呼叫:D66 與流量計 A8 同步(看 LED 用)
 
 #endif

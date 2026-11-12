@@ -6,13 +6,14 @@
 
 | 腳本 | 測什麼 | 韌體 | 接線 | 適用起點 | 最後驗證 |
 |---|---|---|---|---|---|
-| `k1_serial_test.py` | `mcuAlive` 間隔、`ping` → `pong`(不動泵閥) | 正式 / 除錯 | — | `09802ba`(步驟 2b) | `d6ec6fa`:平均 1000.0 ms、pong 12 ms |
-| `k1_cmd_parse_test.py` | 黏包、超長丟棄、255 字元上限、待機 `stop` | 正式 / 除錯 | — | `02c0475`(4a);255 上限 `3627cb6` | `d6ec6fa`:8 / 8 PASS |
-| `k1_pour_cmd_test.py` | 出杯中 `stop` / `stopslotN` 立刻、其他命令 `end` 後執行、下一杯 JSON 暫存 | 正式 / 除錯 | — | `d6ec6fa`(步驟 5) | `d6ec6fa`:11 / 11 PASS |
-| `k1_pour_log.py` | 單筆出杯情境：水量 0 + slot / time、數字格式水量、120 秒逾時、到量後再印用水量;也可送任意命令只看 log | 正式;到量情境用除錯 + `--flowgen` | 到量情境 D22 → A8 | 各情境見檔頭 | `d6ec6fa`:正式 28 / 28、除錯 7 / 7 PASS |
-| `k1_order_test.py` | 隨機訂單、slot 開啟順序與時間、出杯中穿插命令 | 正式 | — | `4001f2d`(2d);預期值 `d6ec6fa` 改版 | `d6ec6fa`:seed 3 |
-| `k1_volume_test.py` | 模擬流量計到量停水、配比換算、slot 關閉時間 | 除錯 | D22 → A8 | `4fc8663`(H4);預期值 `d6ec6fa` 改版 | `d6ec6fa`:seed 11 6 / 6 PASS |
-| `k1_pressure_test.py` | `pressure#`:開機尚無資料回 `null`、待機讀值、出杯中立刻回 | 正式 / 除錯 | A1 接待測電壓(空板目前 5 V → 10 kΩ → A1,讀 1023) | 步驟 6 | 步驟 6:7 / 7 PASS(`--expect 1023`) |
+| `k1_serial_test.py` | `mcuAlive` 間隔、`ping` → `pong`(不動泵閥) | 正式 / 除錯 | — | `09802ba`(步驟 2b) | jsonfreeflow(除錯版):平均 1000.0 ms、pong 12 ms |
+| `k1_cmd_parse_test.py` | 黏包、超長丟棄、255 字元上限、待機 `stop` | 正式 / 除錯 | — | `02c0475`(4a);255 上限 `3627cb6` | jsonfreeflow(除錯版):8 / 8 PASS |
+| `k1_pour_cmd_test.py` | 出杯中 `stop` / `stopslotN` 立刻、其他命令 `end` 後執行、下一杯 JSON 暫存 | 正式 / 除錯 | — | `d6ec6fa`(步驟 5) | jsonfreeflow(除錯版):11 / 11 PASS |
+| `k1_pour_log.py` | 單筆出杯情境：水量 0 + slot / time、數字格式水量、120 秒逾時、到量後再印用水量;也可送任意命令只看 log | 正式;到量情境用除錯 + `--flowgen` | 到量情境 D22 → A8 | 各情境見檔頭 | jsonfreeflow:除錯 `--flowgen` 29 / 29 PASS;正式(含逾時)最後在 `d6ec6fa` 28 / 28 |
+| `k1_order_test.py` | 隨機訂單、slot 開啟順序與時間、出杯中穿插命令 | 正式 | — | `4001f2d`(2d);預期值 `d6ec6fa` 改版 | jsonfreeflow(除錯版接 D22 → A8):seed 3 |
+| `k1_volume_test.py` | 模擬流量計到量停水、配比換算、slot 關閉時間 | 除錯 | D22 → A8 | `4fc8663`(H4);預期值 `d6ec6fa` 改版 | jsonfreeflow:seed 11 6 / 6 PASS |
+| `k1_pressure_test.py` | `pressure#`:開機尚無資料回 `null`、待機讀值、出杯中立刻回 | 正式 / 除錯 | A1 接待測電壓(空板目前 5 V → 10 kΩ → A1,讀 1023) | 步驟 6 | jsonfreeflow(除錯版):7 / 7 PASS(`--expect 1023`) |
+| `k1_freeflow_test.py` | JSON freeflow(`{"freeflow":"cold"…}`):開始 / 結束字串、每 200 ms `freeflow pulse:N`、slot 開啟時間 ≈ pulse × 時間值(除錯版統計)、時間值上限 150、值錯誤、進行中收命令、出杯模式不受影響;F9 隨機出杯(冷 / 常溫、4~6 個 slot 1:10 / 1:32、250 / 330 / 500 ml、每杯按 1~3 次,`--rounds` / `--seed`) | **除錯** | D22 → A8 | jsonfreeflow(2026-11-12) | jsonfreeflow:F1~F6 + F9 5 杯(10 段)60 / 60 PASS(`--seed 43176`;slot 誤差平均 −3.3%、最差 −13.9% / +8.0%) |
 | `k1_harness.py` | 共用模組(開 port、時間表送命令、PASS / FAIL),本身不是測試 | — | — | — | — |
 
 - **正式版**:不帶 `K1_DEBUG_FLOW_GEN` 編譯。A8 沒有脈衝，出水到不了量。表中標「正式」的測試，也可以用除錯版拔掉 D22 → A8 杜邦線來跑(A8 同樣沒有脈衝)
@@ -27,6 +28,7 @@ python -I -X utf8 tools/k1_pour_cmd_test.py --port COM28
 python -I -X utf8 tools/k1_pour_log.py --port COM28              # 正式版(或除錯版拔線),約 2.5 分鐘(含逾時)
 python -I -X utf8 tools/k1_pour_log.py --port COM28 --flowgen    # 除錯版
 python -I -X utf8 tools/k1_pressure_test.py --port COM28 --expect 1023
+python -I -X utf8 tools/k1_freeflow_test.py --port COM28        # 除錯版;F9 預設 5 杯,全部約 4 分鐘
 python -I -X utf8 tools/k1_serial_test.py --port COM28
 python -I -X utf8 tools/k1_order_test.py --port COM28 --seed 3
 python -I -X utf8 tools/k1_volume_test.py --port COM28 --seed 11  # 除錯版

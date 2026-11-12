@@ -6,6 +6,7 @@
 #include "flowmeter.h"     // flow_get、FLOW_UL_PER_PULSE
 #include "diagnostics.h"   // checkMemory
 #include "tx_queue.h"      // out、print_liters_ul
+#include "jsonfreeflow.h"  // 〔2026-11-12〕JSON freeflow(按住出水)
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  〔步驟 2d〕出杯邏輯對齊 old/mcu31v2/mcu31v2.ino(老闆電腦上的版本,目前已知最新)
@@ -360,6 +361,8 @@ void dispense_tick_1ms(void) {
     }
 }
 
+/* 〔jsonfreeflow,2026-11-12〕freeflow 進行中也算出杯中:命令暫存、不送 mcuAlive、stop / stopslotN 轉給 freeflow。
+ * 原寫法(只看出杯狀態機)保留供對照:
 bool dispense_busy(void) {
     return ds_state != DS_IDLE;
 }
@@ -367,8 +370,18 @@ bool dispense_busy(void) {
 void dispense_abort(void) {
     if (ds_state != DS_IDLE) pour_finish();   // finish: stopped by system timeout or external stop(若水還沒停)
 }
+ */
+bool dispense_busy(void) {
+    return ds_state != DS_IDLE || jff_busy();
+}
+
+void dispense_abort(void) {
+    if (ds_state != DS_IDLE) pour_finish();   // finish: stopped by system timeout or external stop(若水還沒停)
+    jff_stop();                               // 〔jsonfreeflow〕freeflow 進行中才有動作
+}
 
 void dispense_stop_slot(int slotNumber) {
+    if (jff_busy()) { jff_stop_slot(slotNumber); return; }   // 〔jsonfreeflow〕
     if (ds_state == DS_IDLE || slotNumber < 0 || slotNumber >= slotCount) return;
     uint16_t bit = (uint16_t)(1u << slotNumber);
     if (slot_on & bit) {
@@ -384,6 +397,11 @@ void execute_actions(const char* actions) {
     out.println("start");
     out.print("Received actions: ");
     out.println(actions);
+
+    if (jff_is_request(actions)) {            // 〔jsonfreeflow,2026-11-12〕有 "freeflow" 鍵 → 按住出水模式
+        jff_execute(actions);
+        return;
+    }
 
     pour_req_t req;
     if (!pour_parse(actions, &req)) return;   // 解析失敗:已印 "Failed to parse JSON: ...",不送 end(同舊版)
