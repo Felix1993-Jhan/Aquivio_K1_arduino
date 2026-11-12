@@ -63,6 +63,7 @@ def hx(b):
 class T:
     def __init__(self, s):
         self.s, self.ok, self.n = s, 0, 0
+        self.conc, self.stats, self.errs = {}, [], []   # F9 統計:同時開台數、每段 slot 劑量誤差 %
 
     def xfer(self, data, wait=0.1):
         self.s.reset_input_buffer()
@@ -99,6 +100,7 @@ class T:
         target = None:量 dur 秒;target = pulse 數:同上位機每 250 ms 讀一次 0x03 流量,
         到量就停(dur 為逾時上限)。回傳 {ID: 開啟 ms}、樣本數、平均間隔 ms、實際經過秒數"""
         on = {i: 0.0 for i in ids}
+        self.conc = {}                       # 同時開著幾台 slot(ID0~9)→ 累計秒數
         q_st, q_fl = pkt(0xB5, 0), pkt(0x03, 18)
         self.s.reset_input_buffer()
         t0 = prev = t_fl = time.perf_counter()
@@ -111,6 +113,8 @@ class T:
             for i in ids:                    # 這段時間沿用上一次的 Status
                 if st >> i & 1:
                     on[i] += now - prev
+            k = bin(st & 0x3FF).count('1')
+            self.conc[k] = self.conc.get(k, 0.0) + now - prev
             if len(rx) == 9:
                 if read_flow:
                     t_fl = now
@@ -131,6 +135,13 @@ class T:
         self.xfer(pkt(0x04, 18))
         self.check(f'{tag} 0x07 Type {typ}、N={len(groups)} {groups} → 回原封包', ff(groups, typ), ff(groups, typ))
         on, n, per, dur = self.measure(dur, slots + uvcs, target)
+        if len(slots) > 1:                   # 同時開幾台(出水口噴水感指標),只印出不判斷
+            tot = sum(self.conc.values()) or 1
+            mx = max(k for k, v in self.conc.items() if v > 0)
+            ge3 = sum(v for k, v in self.conc.items() if k >= 3) / tot * 100
+            self.stats.append((mx, ge3))
+            dist = ' '.join(f'{k}台 {v / tot * 100:.0f}%' for k, v in sorted(self.conc.items()) if v > 0)
+            print(f'   (同時開著的 slot:最多 {mx} 台、≥3 台 {ge3:.1f}% 的時間 | {dist})\n')
         for i in uvcs:                       # UVC 不看時間值,收到 0x07 就開,一直開到 0x02
             self.result(f'{tag} UVC ID{i} 整段開著(時間值不影響)', on[i] >= dur * 1000 * 0.95,
                         [f'量到 {on[i]:.0f} ms / {dur * 1000:.0f} ms(需 ≥ 95%)'])
@@ -142,6 +153,8 @@ class T:
             add = min(v, 150)
             ideal = (p or 0) * add
             lo, hi = ideal * 0.85 - 100, ideal * 1.1 + 50
+            if ideal:
+                self.errs.append((add, (on[i] / ideal - 1) * 100))
             self.result(f'{tag} slot{i} 時間值 {v}(實際用 {add})開啟時間 ≈ pulse 數 × {add}',
                         p is not None and lo <= on[i] <= hi,
                         [f'{dur:.1f} 秒內 pulse {p} 個 → 理論 {ideal} ms(允許 {lo:.0f}~{hi:.0f})',
@@ -227,6 +240,7 @@ def main():
     seed = a.seed if a.seed is not None else int(time.time()) % 100000
     rng = random.Random(seed)
     print(f'══ F9 隨機出杯 {a.rounds} 輪(亂數種子 {seed},重跑同一組:--seed {seed})══')
+    t.stats, t.errs = [], []                 # 只統計 F9
     for r in range(1, a.rounds + 1):
         typ = rng.randint(0, 1)
         cup = rng.choice(CUPS)
@@ -279,6 +293,17 @@ def main():
                     print(f'     ID{i}(slot{i + 1}) 時間值 {v}:理論 {ideal} ms、實測 {tot[i]:.0f} ms、'
                           f'少 {ideal - tot[i]:.0f} ms({(tot[i] / ideal - 1) * 100:+.1f}%)')
             print()
+
+    if t.stats:                              # F9 總結(比較韌體改動前後用,同一個 --seed)
+        mxs, ge3s = [x[0] for x in t.stats], [x[1] for x in t.stats]
+        print(f'══ F9 總結(亂數種子 {seed},共 {len(t.stats)} 段出水)══')
+        print(f'   同時開著的 slot:最多(平均){sum(mxs) / len(mxs):.2f} 台、最差 {max(mxs)} 台;'
+              f'≥3 台的時間平均 {sum(ge3s) / len(ge3s):.1f}%')
+        for lab, cond in (('1:10', lambda v: v >= 50), ('1:32', lambda v: v < 50)):
+            e = [x[1] for x in t.errs if cond(x[0])]
+            if e:
+                print(f'   {lab} slot 劑量誤差(每段):平均 {sum(e) / len(e):+.1f}%,範圍 {min(e):+.1f} ~ {max(e):+.1f}%(共 {len(e)} 筆)')
+        print()
 
     t.xfer(mask_pkt(0x02, 0xFFFFFFFF))
     s.close()

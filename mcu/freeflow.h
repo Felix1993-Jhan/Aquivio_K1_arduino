@@ -11,6 +11,7 @@
  *  ▸ 每來 1 個流量 pulse:acc += pulse_add_time(上限 ACC_MAX)
  *  ▸ acc ≥ 100 → 開 slot 100 ms,扣 100;扣完 < 100 才關
  *    ⚠ K1 修正:K2 開啟條件為 acc > 100,扣完剛好 = 100 時卡開(見 freeflow.cpp)
+ *  ▸ 〔K1 新增,試驗中〕收到 0x07 時 slot 的 acc 起點依 ID 順序輪流 17 / 50 / 83(K2 為 0),錯開同時開啟
  *  ▸ 不移植:氣泡水模式 2(freeflow_punpON2、timer1_longPressure_*2、SPRKINGCYCLE),K1 沒有氣泡水
  *           短脈衝偵測(ShortPulse_*,異常偵測)
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -40,6 +41,7 @@ extern uint32_t     temp_main_freeflow;   // 0x07 帶的 UVC(ID 11~13)遮罩
 
 void sort_by_speed(freeflow_def *data, int count);
 void freeflow_Reset(void);
+void freeflow_stagger_start(void);   // 〔K1 新增,試驗中〕acc 起點 17 / 50 / 83 輪流
 void freeflow_punpON(void);
 void timer1_longPressure_flowcount(uint32_t d);
 void timer1_longPressure_pumpCount(void);

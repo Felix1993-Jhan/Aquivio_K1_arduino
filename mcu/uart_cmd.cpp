@@ -304,6 +304,7 @@ static int LONG_PRESSURE_CMD(void)
             if (id < 10) pump0_9count++;            // 計算有幾個 slot
         }
         sort_by_speed(channel7_CMD, RxBuffer[4]);   // 小的 ID 在前面
+        freeflow_stagger_start();                   // 〔K1 新增〕slot 的 acc 起點錯開 17 / 50 / 83(見 freeflow.cpp)
     } else {
         // 數值設定為 00 則表示要做 delay 關水:清空 slot 資料
         for (uint8_t i = 0; i < 10; i++) {

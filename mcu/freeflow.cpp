@@ -36,6 +36,21 @@ void freeflow_Reset(void)
     temp_main_freeflow = 0;
 }
 
+/* 〔K1 新增,使用者 2026-11-11 決定,試驗中〕slot 的 acc 起點錯開(K2 一律從 0 開始)。
+ * 原因:同比例的 slot 會在同一個 pulse 一起跨過 100 → 同時開,出水口有「小噴水」感。
+ * 做法:LONG_PRESSURE_CMD 排序(ID 小 → 大)後呼叫;時間值不是 0 的 slot 依序輪流給 17 / 50 / 83。
+ *   ▸ 錯開:起點不同 → 跨過 100 的 pulse 不同(同比例的 slot 會一直維持相位差)
+ *   ▸ 劑量:平均預先加 50,抵掉放開時 freeflow_Reset 清掉的殘量(平均約 50)
+ * 每次 0x07 都重設(同一杯放開再按也會重新加)。K2 原本為 LONG_PRESSURE_CMD 裡的 acc = 0(保留,先清 0 再由此覆蓋) */
+void freeflow_stagger_start(void)
+{
+    static const uint8_t ACC_START[3] = { 17, 50, 83 };
+    uint8_t k = 0;
+    for (int i = 0; i < pump0_9count; i++) {
+        if (channel7_CMD[i].pulse_add_time) channel7_CMD[i].acc = ACC_START[k++ % 3];
+    }
+}
+
 /* ══════════════════════════════════════════════════════════
  *  常溫水 / 冷水模式(K2 freeflow.c 區塊 2)
  *  K2 在主迴圈每圈呼叫;K1 由 tick_main 每 1 ms 呼叫(狀態每 1 ms 才變,結果相同)
