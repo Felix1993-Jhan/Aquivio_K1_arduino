@@ -1,6 +1,7 @@
 # UART 通訊協定(K1 K2 移植版)
 
-> 韌體 0.0.4.0(`main-k2port-v4`)。協定沿用 K2 v0.0.0.11(`ai_docs/docs/protocol.md`);標 ⚠ 的是 K1 與 K2 不同之處,總表見 [k2_diff.md](k2_diff.md)。〔[沿革](#沿革)〕
+> 加入版本:0.0.4.0 / 最後修改:0.0.4.0(2026-11-12)
+> 韌體 0.0.4.0(`main-k2port-v4`)。協定沿用 K2 v0.0.0.11(`ai_docs/docs/protocol.md`);標 ⚠ 的是 K1 與 K2 不同之處,總表見 [k2_diff.md](k2_diff.md)。
 > 程式:`mcu/uart_cmd.cpp`(收包、分派、回覆)、`mcu/device_ctrl.cpp`(裝置 ID)、`mcu/timer_task.cpp`、`mcu/freeflow.cpp`。
 
 ## 1. 實體層
@@ -242,6 +243,8 @@ K2 沒有此命令。用途是測試時確認輸出狀態，也能看出上位�
 
 ---
 
-## 沿革
+## 文件修改紀錄
 
-- 2026-11-12 建立(0.0.4.0,`b74d5a3`)。內容整理自 `K2_aidata/K1_k2port_discussion.md` 第 3 節與 P1~P5 實作
+| 版本 | 日期 | 改了什麼 |
+|---|---|---|
+| 0.0.4.0 | 2026-11-12 | 建立(`b74d5a3`)。內容整理自 `K2_aidata/K1_k2port_discussion.md` 第 3 節與 P1~P5 實作 |

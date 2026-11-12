@@ -6,6 +6,8 @@
 
 ## 中文
 
+> 加入版本:0.0.4.0 / 最後修改:0.0.4.0(2026-11-12)
+
 AQUIVIO K1 飲水機的 Arduino Mega 2560 韌體，**K2 移植版**(分支 `main-k2port-v4`):通訊改用 K2 的 UART 協定，上位機可沿用 K2 的命令與裝置 ID。
 
 | 項目 | 內容 |
@@ -104,6 +106,8 @@ arduino-cli compile --fqbn arduino:avr:mega:cpu=atmega2560 --build-property "com
 
 ## English
 
+> Added in: 0.0.4.0 / Last modified: 0.0.4.0 (2026-11-12)
+
 Arduino Mega 2560 firmware for the AQUIVIO K1 water dispenser — **K2 port** (branch `main-k2port-v4`). Communication uses the K2 UART protocol, so the host can reuse K2 commands and device IDs.
 
 | Item | Value |
@@ -199,3 +203,11 @@ Technical documents are in Chinese.
 | 0.0.4.0 | K2 port: K2 UART protocol, `0x00~0x07`, freeflow (staggered slot start, UVC always on), `0xB5` status query |
 
 Full history: [changelog.md](ai_docs/docs/changelog.md).
+
+---
+
+## 文件修改紀錄 / Document history
+
+| 版本 / Version | 日期 / Date | 改了什麼 / Changes |
+|---|---|---|
+| 0.0.4.0 | 2026-11-12 | 建立:K2 移植版說明(中英雙語),取代原本只有標題的 `# mcu` / Created: K2 port description (bilingual), replacing the title-only `# mcu` |

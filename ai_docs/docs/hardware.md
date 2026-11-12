@@ -1,6 +1,7 @@
 # 硬體:腳位、計時器、ADC
 
-> 韌體 0.0.4.0(`main-k2port-v4`)。腳位依 K1 轉接板實際接線(使用者確認 2026-11-10);Arduino 官方腳位圖 `A000067-full-pinout.pdf`。〔[沿革](#沿革)〕
+> 加入版本:0.0.4.0 / 最後修改:0.0.4.0(2026-11-12)
+> 韌體 0.0.4.0(`main-k2port-v4`)。腳位依 K1 轉接板實際接線(使用者確認 2026-11-10);Arduino 官方腳位圖 `A000067-full-pinout.pdf`。
 > 程式:`mcu/pins.cpp`(`PinMap[]`)、`mcu/device_ctrl.cpp`(`DeviceMap[]`)、`mcu/tick.cpp`、`mcu/flowmeter.cpp`、`mcu/pressure.cpp`、`mcu/diagnostics.cpp`。
 
 ## 1. MCU 與資源
@@ -117,6 +118,8 @@ Mega 2560 共 70 支 I/O,本版使用 23 支(`PinMap` 20 支 + Serial 2 支 + �
 
 ---
 
-## 沿革
+## 文件修改紀錄
 
-- 2026-11-12 建立(0.0.4.0,`b74d5a3`)。腳位整理自 `CLAUDE.md`,裝置 ID 整理自 `K2_aidata/K1_k2port_discussion.md` 3.2
+| 版本 | 日期 | 改了什麼 |
+|---|---|---|
+| 0.0.4.0 | 2026-11-12 | 建立(`b74d5a3`)。腳位整理自 `CLAUDE.md`,裝置 ID 整理自 `K2_aidata/K1_k2port_discussion.md` 3.2 |
