@@ -278,6 +278,7 @@ static void SET_PULSE_CMD(void)
  *   封包:[4] = N(組數)、每組 3 byte [ID][時間 L][時間 H](每 pulse 該 slot 開幾 ms)、CS 前一 byte = Type
  *   N > 0:記錄各 slot,ID 11~13(UVC)直接開;N = 0:停料、只出水(slot + 水泵 + 閥全關,再依 Type 開水泵 + 閥)
  *   最後依 Type 開水泵 + 閥;回覆 = 原封包(7 + 3N byte)
+ * ⚠ K1:UVC ID 11~13 不論 0x07 有沒有帶都開(上位機沒帶,見函式尾端)
  * ⚠ K1:Type 2(氣泡水,K2 走模式 2)及其他未定義 Type → 不支援格式 9 byte,不動作;回傳 0 讓呼叫端改 9 byte
  * 不移植 PressPump_OnHostStart(水桶補壓)、ShortPulse_Register(氣泡水短脈衝) */
 static int LONG_PRESSURE_CMD(void)
@@ -314,7 +315,14 @@ static int LONG_PRESSURE_CMD(void)
         }
         handleSW(2, 0x1C7FFUL);                     // 關閉前面的 10 個 slot 與 3 個 relay + 水泵
     }
+    /* 〔K1 修改,使用者 2026-11-12 決定〕K2 只開 0x07 有帶的 UVC(N = 0 時沿用上一包的),
+     * 但上位機(aquivio-station)的 0x07 不帶 UVC ID,放開後的沖洗 07 00 00 又在 0x02 重置之後 → freeflow 出水時 UVC 都沒開。
+     * UVC 要對出水殺菌:改為 Type 0 / 1 一律開 ID 11~13(N > 0、N = 0 都開);關閉照舊由上位機 0x02(結束封包 bit0~17)。
+     * 上面「ID 11~13 記進 temp_main_freeflow」保留(結果相同)。K2 原寫法:
     handleSW(1, temp_main_freeflow);                // 開啟 UVC(N = 0 時為上一包的,同 K2)
+     */
+    temp_main_freeflow |= DEV_BIT(11) | DEV_BIT(12) | DEV_BIT(13);
+    handleSW(1, temp_main_freeflow);                // 開啟 UVC
     handleSW(1, PulseStart);                        // 做 Start 的動作,直接開啟出水
     return 1;
 }

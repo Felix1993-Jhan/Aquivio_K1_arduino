@@ -4,7 +4,7 @@ N = 0(停料只出水)、0x02 結束封包重置、不支援 Type、N 上限;F9 
 用法:python -I -X utf8 tools/portK2_tool/k2p_freeflow_test.py --port COM28 [--rounds 5] [--seed N]
 每項印出 TX / 預期 / RX(hex)或量測值與結果。
 F9 隨機出杯:每輪隨機冷水 / 常溫、從 ID0~9 挑 4~6 個 slot、各給 1:10 或 1:32 的時間值,
-  並帶 UVC ID11~13(時間值隨機,韌體不看);杯量隨機 250 / 330 / 500 ml,
+  不帶 UVC(同上位機;韌體收到 0x07 一律開 UVC ID11~13,每段檢查);杯量隨機 250 / 330 / 500 ml,
   以 ceil(ml / --ml-per-pulse) 換成 pulse 數(預設 3.2,K2 上位機預設值),出水中每 250 ms 讀 0x03,到量送結束封包;
   每杯隨機按 1~3 次(⚠ 中斷:每段 ≥ 10 pulse、放開 0.5~2 秒,每段送同一包 0x07,最後一段補到杯量);
   印出亂數種子,FAIL 時用 --seed 重跑同一組搭配。
@@ -15,11 +15,12 @@ slot 開啟時間的量法:出水中以 0xB5 00 連續輪詢 Status(每次約數
 允許範圍:理論 × 0.85 − 100 ~ 理論 × 1.1 + 50 ms(輪詢解析度、結束時 acc 殘量 < 100、每段少 1 ms)。
 
 適用韌體:main-k2port-v4 P5 起(除錯版,115200)
-最後驗證:P5,F1~F8 + F9 24 杯(16 杯有中斷)共 537 / 537 PASS(2026-11-11,--seed 81398,3.2 ml/pulse)"""
+最後驗證:P5 + 0x07 自動開 UVC,F1~F8 + F9 24 杯(16 杯有中斷、59 段)共 656 / 656 PASS(2026-11-12,--seed 81398,3.2 ml/pulse)"""
 import argparse, math, random, time, serial
 
 HDR = [0x40, 0x71, 0x30]
 PUMP, WARM, COLD, UVC12 = 1 << 10, 1 << 14, 1 << 15, 1 << 12
+UVC = (1 << 11) | (1 << 12) | (1 << 13)     # 〔2026-11-12〕K1 收到 0x07 Type 0 / 1 一律開 UVC ID11~13
 
 # F9 比例 → 每 pulse 時間值(ms)。來源:使用者以上位機公式與預設校正算出(2026-11-11),
 # 1:10 = 72;1:32 = 21~23(隨機)
@@ -131,7 +132,9 @@ class T:
     def pour(self, tag, groups, typ, dur=4.0, target=None):
         """送 0x07 → 量 dur 秒(或到 target 個 pulse)→ 結束封包 → 依 pulse 數判斷每個 slot 的開啟時間"""
         slots = [i for i, _ in groups if i < 10]
-        uvcs = [i for i, _ in groups if 10 < i < 14]
+        # 〔2026-11-12〕韌體不論 0x07 有沒有帶都開 UVC → 一律檢查 ID11~13。原寫法(只查有帶的):
+        # uvcs = [i for i, _ in groups if 10 < i < 14]
+        uvcs = [11, 12, 13]
         self.xfer(pkt(0x04, 18))
         self.check(f'{tag} 0x07 Type {typ}、N={len(groups)} {groups} → 回原封包', ff(groups, typ), ff(groups, typ))
         on, n, per, dur = self.measure(dur, slots + uvcs, target)
@@ -142,8 +145,9 @@ class T:
             self.stats.append((mx, ge3))
             dist = ' '.join(f'{k}台 {v / tot * 100:.0f}%' for k, v in sorted(self.conc.items()) if v > 0)
             print(f'   (同時開著的 slot:最多 {mx} 台、≥3 台 {ge3:.1f}% 的時間 | {dist})\n')
-        for i in uvcs:                       # UVC 不看時間值,收到 0x07 就開,一直開到 0x02
-            self.result(f'{tag} UVC ID{i} 整段開著(時間值不影響)', on[i] >= dur * 1000 * 0.95,
+        for i in uvcs:                       # UVC 收到 0x07 就開(有沒有帶、時間值都不影響),一直開到 0x02
+            self.result(f'{tag} UVC ID{i} 整段開著({"0x07 有帶" if i in dict(groups) else "0x07 沒帶,韌體自動開"})',
+                        on[i] >= dur * 1000 * 0.95,
                         [f'量到 {on[i]:.0f} ms / {dur * 1000:.0f} ms(需 ≥ 95%)'])
         self.check(f'{tag} 結束封包(0x02 遮罩 bit0~17)→ 回原封包', END, END)
         p = self.flow()
@@ -178,7 +182,7 @@ def main():
     print('══ F1 冷水、slot0 每 pulse 50 ms ══')
     t.xfer(pkt(0x04, 18))
     t.check('F1 0x07 Type 1、slot0 50 ms → 回原封包', ff([(0, 50)], 1), ff([(0, 50)], 1))
-    t.check_status('F1 剛開:水泵 A13 + 冷水閥 A15(slot0 還沒累積,關著)', PUMP | COLD)
+    t.check_status('F1 剛開:水泵 A13 + 冷水閥 A15 + UVC11~13(沒帶也開;slot0 還沒累積,關著)', PUMP | COLD | UVC)
     t.xfer(END)
     t.pour('F1', [(0, 50)], 1)
     t.check_status('F1 結束後全關', 0)
@@ -196,19 +200,24 @@ def main():
     t.xfer(pkt(0x04, 18))
     g4 = [(5, 25), (0, 50), (12, 0)]
     t.check('F4 0x07 Type 0、N=3 → 回原封包', ff(g4, 0), ff(g4, 0))
-    t.check_status('F4 剛開:水泵 + 常溫閥 A14 + UVC12(carbonated A9)', PUMP | WARM | UVC12)
+    t.check_status('F4 剛開:水泵 + 常溫閥 A14 + UVC11~13(只帶 UVC12,其他兩個也開)', PUMP | WARM | UVC)
     t.xfer(END)
     t.pour('F4', g4, 0)
-    t.check_status('F4 結束封包後全關(含 UVC12)', 0)
+    t.check_status('F4 結束封包後全關(含 UVC)', 0)
 
     print('══ F5 N=0(停料、只出水;同 K2)══')
     t.xfer(ff([(0, 150), (12, 0)], 1))
     time.sleep(1.5)
     t.check('F5 1.5 秒後送 0x07 N=0 Type 0 → 回原封包', ff([], 0), ff([], 0))
-    t.check_status('F5 slot0、冷水閥關;水泵 + 常溫閥開;UVC12 重新開(上一包的,同 K2)', PUMP | WARM | UVC12)
+    t.check_status('F5 slot0、冷水閥關;水泵 + 常溫閥 + UVC11~13 開', PUMP | WARM | UVC)
     on, n, _, _ = t.measure(2.0, [0])
     t.result('F5 之後 2 秒 slot0 都不開', on[0] == 0, [f'slot0 開啟 {on[0]:.0f} ms(輪詢 {n} 次)'])
     t.check('F5 結束封包', END, END)
+    # 〔2026-11-12〕上位機放開後的沖洗:先送結束封包(重置 freeflow)再送 07 00 00 → K2 不開 UVC,K1 改為開
+    t.check('F5 沖洗(結束封包之後)0x07 N=0 Type 0 → 回原封包', ff([], 0), ff([], 0))
+    t.check_status('F5 沖洗:水泵 + 常溫閥 + UVC11~13 開', PUMP | WARM | UVC)
+    t.check('F5 沖洗結束封包', END, END)
+    t.check_status('F5 全關', 0)
 
     print('══ F6 結束封包會重置 freeflow:之後只開水泵,slot 不會再開 ══')
     t.xfer(ff([(0, 150)], 1))
@@ -227,7 +236,7 @@ def main():
     print('══ F8 N 上限 19 ══')
     g19 = [(i, 0) for i in range(10)] + [(i, 0) for i in range(14, 23)]
     t.check('F8 N=19(64 byte)→ 回原封包 64 byte', ff(g19, 1), ff(g19, 1))
-    t.check_status('F8 水泵 + 冷水閥開(時間值皆 0,slot 不開)', PUMP | COLD)
+    t.check_status('F8 水泵 + 冷水閥 + UVC11~13 開(時間值皆 0,slot 不開)', PUMP | COLD | UVC)
     t.xfer(END)
     g20 = [(i, 0) for i in range(20)]
     t.check('F8 N=20(67 byte,超過緩衝)→ 丟棄不回;等 50 ms 再送 PING → 只回 PING',
@@ -252,11 +261,13 @@ def main():
             v = rng.randint(*RATIO[name])
             groups.append((i, v))
             desc.append(f'ID{i}(slot{i + 1}) {name} → {v} ms')
-        # UVC ID11~13 一起放進 0x07(使用者原設計;上位機現況沒帶),時間值隨便填,韌體不看
-        for u in (11, 12, 13):
-            v = rng.randint(0, 255)
-            groups.append((u, v))
-            desc.append(f'ID{u}(UVC) 時間值 {v}(不影響)')
+        # 〔2026-11-12〕改照上位機現況不帶 UVC(韌體自動開,pour() 一律檢查 ID11~13)。原寫法:
+        # # UVC ID11~13 一起放進 0x07(使用者原設計;上位機現況沒帶),時間值隨便填,韌體不看
+        # for u in (11, 12, 13):
+        #     v = rng.randint(0, 255)
+        #     groups.append((u, v))
+        #     desc.append(f'ID{u}(UVC) 時間值 {v}(不影響)')
+        desc.append('UVC ID11~13 不帶(同上位機),韌體自動開')
         rng.shuffle(groups)                      # 送出順序打亂(韌體會排序)
         # 同一杯按 1~3 次(中途放開再按):總 pulse 切段,每段至少 MIN_SEG;放開間隔 0.5~2 秒(水泵關,只能計時)
         presses = rng.randint(1, min(3, target // MIN_SEG))

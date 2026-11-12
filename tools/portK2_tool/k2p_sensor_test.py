@@ -7,7 +7,7 @@
   正式版或沒接線時 S3 會 FAIL(計數不增加)。只在空板上跑。
 
 適用韌體:main-k2port-v4 P3 起(除錯版,115200)
-最後驗證:P5,42 / 42 PASS(2026-11-11)
+最後驗證:P5 + 0x07 自動開 UVC,42 / 42 PASS(2026-11-12)
 P4 起:S7 的 0x06 項目移到 k2p_pulse_test.py(總項數 42)
 P5 起:S7 的 0x07 改用 Type 2(不支援格式、不動作)"""
 import argparse, time, serial
