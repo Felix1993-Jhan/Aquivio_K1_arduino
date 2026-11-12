@@ -24,10 +24,10 @@ K1 由**上位機**(觸控螢幕軟體)與 **Arduino Mega 2560(本專案)**組�
 
 本分支與 K1 的另一個版本並存:
 
-| 版本 | 分支 | 協定 |
-|------|------|------|
-| K1 優化版 | `main-v4` | 原 K1 協定(JSON + `#`、9600),搭配 K1 上位機 |
-| **K2 移植版(本分支)** | `main-k2port-v4` | K2 UART 協定(115200),搭配 K2 上位機 |
+| 版本 | 分支 | 協定 | 文件 |
+|------|------|------|------|
+| K1 JSON 版(K1 優化版) | `main-v4` | 原 K1 協定(JSON + `#`、9600),搭配 K1 上位機 | [技術文件](../main-v4/ai_docs_k1json/技術文件.md) · [README](../main-v4/README.md) |
+| **K2 移植版(本分支)** | `main-k2port-v4` | K2 UART 協定(115200),搭配 K2 上位機 | [技術文件](ai_docs/技術文件.md) |
 
 ### 主要功能
 
@@ -66,7 +66,7 @@ ai_docs/             技術文件
 
 ### 建置與燒錄
 
-在 `mcu/` 下執行(arduino-cli 不在 PATH,位於 `..\FirmwareTest_CS\arduino-cli.exe`):
+在 `mcu/` 下執行(arduino-cli 不在 PATH,本機位於 `Arduino Mega2560_R3\FirmwareTest_CS\arduino-cli.exe`):
 
 ```bash
 # 正式版
@@ -124,10 +124,10 @@ K1 consists of the **host** (touch-screen software) and the **Arduino Mega 2560 
 
 This branch coexists with the other K1 version:
 
-| Version | Branch | Protocol |
-|------|------|------|
-| K1 optimized | `main-v4` | Original K1 protocol (JSON + `#`, 9600), for the K1 host |
-| **K2 port (this branch)** | `main-k2port-v4` | K2 UART protocol (115200), for the K2 host |
+| Version | Branch | Protocol | Docs |
+|------|------|------|------|
+| K1 JSON (K1 optimized) | `main-v4` | Original K1 protocol (JSON + `#`, 9600), for the K1 host | [Technical document](../main-v4/ai_docs_k1json/技術文件.md) · [README](../main-v4/README.md) |
+| **K2 port (this branch)** | `main-k2port-v4` | K2 UART protocol (115200), for the K2 host | [Technical document](ai_docs/技術文件.md) |
 
 ### Features
 
@@ -166,7 +166,7 @@ ai_docs/             Technical documents
 
 ### Build and flash
 
-Run inside `mcu/` (arduino-cli is not on PATH; it is at `..\FirmwareTest_CS\arduino-cli.exe`):
+Run inside `mcu/` (arduino-cli is not on PATH; locally it is at `Arduino Mega2560_R3\FirmwareTest_CS\arduino-cli.exe`):
 
 ```bash
 # Release build
@@ -210,4 +210,5 @@ Full history: [changelog.md](ai_docs/docs/changelog.md).
 
 | 版本 / Version | 日期 / Date | 改了什麼 / Changes |
 |---|---|---|
+| 0.0.4.0 | 2026-11-12 | 版本表加上兩個版本的文件連結(連到 `main-v4` 分支);arduino-cli 位置改寫為本機實際路徑 / Added doc links for both versions (to branch `main-v4`); arduino-cli location rewritten as the local path |
 | 0.0.4.0 | 2026-11-12 | 建立:K2 移植版說明(中英雙語),取代原本只有標題的 `# mcu` / Created: K2 port description (bilingual), replacing the title-only `# mcu` |

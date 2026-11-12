@@ -7,7 +7,7 @@
 
 | 工具 | 版本 | 位置 / 備註 |
 |---|---|---|
-| arduino-cli | 1.4.0 | `..\FirmwareTest_CS\arduino-cli.exe`(專案上一層,不在 PATH) |
+| arduino-cli | 1.4.0 | 本機位於 `Arduino Mega2560_R3\FirmwareTest_CS\arduino-cli.exe`(不在 PATH) |
 | 核心 | arduino:avr 1.8.6 | FQBN `arduino:avr:mega:cpu=atmega2560` |
 | 函式庫 | 無 | 本分支不使用 ArduinoJson(K1 優化版才用) |
 | Python | 3.x + pyserial | 測試腳本 |
@@ -45,7 +45,7 @@ arduino-cli compile --fqbn arduino:avr:mega:cpu=atmega2560 .
 - **正式版 / 除錯版互相切換時加 `--clean`**,避免沿用上次的編譯結果
 - 燒錄前先關掉上位機與任何序列埠工具(會佔住 COM port)
 - 燒錄失敗出現 `stk500v2_getsync(): timeout`:先用 `board list` 確認板子還在
-- 大小(0.0.4.0):正式版 Flash 6298 byte、RAM 1305 byte;除錯版 6374 / 1306 byte
+- 大小(0.0.4.0):正式版 Flash 6316 byte、RAM 1305 byte;除錯版 6374 / 1306 byte
 
 ## 4. 測試腳本
 
@@ -84,4 +84,5 @@ python -I -X utf8 tools/portK2_tool/k2p_freeflow_test.py --port <COM> --rounds 2
 
 | 版本 | 日期 | 改了什麼 |
 |---|---|---|
+| 0.0.4.0 | 2026-11-12 | 正式版 Flash 6298 → 6316(原數字為 `a19a9b3` 量的,`b74d5a3` 多 18 byte);arduino-cli 位置改寫為本機實際路徑 |
 | 0.0.4.0 | 2026-11-12 | 建立(`b74d5a3`) |
